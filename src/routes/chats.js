@@ -54,7 +54,7 @@ router.post('/group', async (req, res) => {
     ];
 
     for (const userId of participantIds) {
-      if (!userId.equals || !currentUserId.equals(userId)) {
+      if (userId.toString() !== currentUserId.toString()) {
         const user = await User.findById(userId);
         if (user) {
           participants.push({ user: userId, role: 'member' });
@@ -132,11 +132,11 @@ router.get('/', async (req, res) => {
 
     const chatsWithInfo = chats.map(chat => {
       if (chat.participants) {
-        chat.participants = chat.participants.filter(p => p.user);
+        chat.participants = chat.participants.filter(p => p && p.user);
       }
 
       const chatObj = chat.toObject();
-      chatObj.unreadCount = chat.getUnreadCount(currentUserId);
+      chatObj.unreadCount = chat.getUnreadCount ? chat.getUnreadCount(currentUserId) : 0;
       
       if (chat.messages && chat.messages.length > 0) {
         const lastMsg = chat.messages[chat.messages.length - 1];
@@ -184,8 +184,10 @@ router.get('/:id', async (req, res) => {
       return res.status(404).json({ message: 'Chat not found' });
     }
 
+    if (!chat.participants) chat.participants = [];
+    
     const originalCount = chat.participants.length;
-    chat.participants = chat.participants.filter(p => p.user != null);
+    chat.participants = chat.participants.filter(p => p && p.user);
     
     let needsSave = false;
     if (chat.participants.length !== originalCount) {
@@ -301,7 +303,7 @@ router.get('/:id', async (req, res) => {
       hasMore: skip + parseInt(limit) < totalMessages
     };
 
-    chatObj.unreadCount = chat.getUnreadCount(currentUserId);
+    chatObj.unreadCount = chat.getUnreadCount ? chat.getUnreadCount(currentUserId) : 0;
 
     res.status(200).json({ chat: chatObj });
   } catch (error) {
