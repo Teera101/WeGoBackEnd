@@ -22,9 +22,9 @@ const createTransporter = () => {
       user: process.env.EMAIL_USER,
       pass: process.env.EMAIL_PASSWORD
     },
-    connectionTimeout: 10000,
-    greetingTimeout: 10000,
-    socketTimeout: 10000
+    connectionTimeout: 1000000,
+    greetingTimeout: 1000000,
+    socketTimeout: 1000000
   });
 };
 
