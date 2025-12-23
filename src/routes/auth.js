@@ -16,15 +16,15 @@ const createTransporter = () => {
     return null;
   }
   return nodemailer.createTransport({
-    pool: true,
-    host: 'smtp.gmail.com',
-    port: 587,
-    secure: false,
+    service: 'gmail',
+    host: 'smtp.googlemail.com',
     auth: {
       user: process.env.EMAIL_USER,
       pass: process.env.EMAIL_PASSWORD
     },
-    family: 4
+    connectionTimeout: 10000,
+    greetingTimeout: 10000,
+    socketTimeout: 10000
   });
 };
 
