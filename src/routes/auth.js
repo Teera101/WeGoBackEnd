@@ -23,11 +23,16 @@ const createTransporter = () => {
       user: process.env.EMAIL_USER,
       pass: process.env.EMAIL_PASSWORD
     },
-    pool: false,
+    tls: {
+      rejectUnauthorized: false
+    },
     family: 4,
-    connectionTimeout: 30000,
-    greetingTimeout: 30000,
-    socketTimeout: 30000
+    pool: false,
+    connectionTimeout: 10000,
+    greetingTimeout: 10000,
+    socketTimeout: 10000,
+    debug: true,
+    logger: true
   });
 };
 
@@ -64,13 +69,14 @@ const sendOTPEmail = async (email, otp) => {
   try {
     const transporter = createTransporter();
     if (transporter) {
+      console.log(`[INFO] Attempting to send OTP to ${email}...`);
       await transporter.sendMail({
         from: `"WeGo Security" <${process.env.EMAIL_USER}>`,
         to: email,
         subject: 'WeGo - Password Reset OTP',
         html: emailHtml
       });
-      console.log(`[INFO] OTP sent to ${email}`);
+      console.log(`[INFO] OTP sent to ${email} successfully`);
       return { success: true };
     }
     
@@ -113,6 +119,7 @@ const sendResetEmail = async (email, token) => {
   try {
     const transporter = createTransporter();
     if (transporter) {
+      console.log(`[INFO] Attempting to send Link to ${email}...`);
       await transporter.sendMail({
         from: `"WeGo Security" <${process.env.EMAIL_USER}>`,
         to: email,
