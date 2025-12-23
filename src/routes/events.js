@@ -58,7 +58,7 @@ router.get('/by-chat/:chatId', async (req, res) => {
       return res.status(404).json({ error: 'Event not found for this chat' });
     }
     const group = await Group.findOne({ relatedActivity: event._id.toString() })
-      .populate('members.userId', 'name avatar email');
+      .populate('members.userId', 'username name avatar email');
     res.json({ event, group });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -94,7 +94,8 @@ router.post('/reviews', auth, async (req, res) => {
 router.get('/reviews/:groupId', async (req, res) => {
   try {
     const reviews = await Review.find({ groupId: req.params.groupId })
-      .populate('userId', 'name avatar email')
+      // ✅ เพิ่ม username ตรงนี้ครับ
+      .populate('userId', 'username name avatar email') 
       .sort({ updatedAt: -1 });
     res.json(reviews);
   } catch (error) {
