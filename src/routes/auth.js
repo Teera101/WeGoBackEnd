@@ -11,26 +11,28 @@ const router = express.Router();
 const otpStore = new Map();
 
 const createTransporter = () => {
-  if (!process.env.EMAIL_USER || !process.env.EMAIL_PASSWORD) {
+  const host = process.env.EMAIL_HOST || 'smtp.resend.com';
+  const port = parseInt(process.env.EMAIL_PORT || '465');
+  const user = process.env.EMAIL_USER;
+  const pass = process.env.EMAIL_PASSWORD;
+
+  if (!user || !pass) {
     console.error('[CONFIG ERROR] Missing EMAIL_USER or EMAIL_PASSWORD');
     return null;
   }
 
-  const host = process.env.EMAIL_HOST || 'smtp.resend.com';
-  const port = parseInt(process.env.EMAIL_PORT || '465');
-  const secure = process.env.EMAIL_SECURE === 'true' || port === 465;
-
   return nodemailer.createTransport({
     host: host,
     port: port,
-    secure: secure,
+    secure: port === 465,
     auth: {
-      user: process.env.EMAIL_USER,
-      pass: process.env.EMAIL_PASSWORD
+      user: user,
+      pass: pass
     },
-    tls: {
-      rejectUnauthorized: false
-    }
+    family: 4,
+    connectionTimeout: 30000,
+    greetingTimeout: 30000,
+    socketTimeout: 30000
   });
 };
 
@@ -43,7 +45,7 @@ const verifyEmailConnection = async () => {
   }
   try {
     await transporter.verify();
-    console.log('[INFO] Email server ready');
+    console.log(`[INFO] Email server ready (Host: ${process.env.EMAIL_HOST || 'smtp.resend.com'})`);
   } catch (error) {
     console.error('[ERROR] Email connection failed:', error.message);
   }
