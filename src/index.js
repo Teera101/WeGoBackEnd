@@ -21,18 +21,23 @@ import User from './models/user.js';
 import Profile from './models/profile.js';
 import DirectMessage from './models/directmessage.js';
 
-dotenv.config();
-
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+dotenv.config({ path: path.join(__dirname, '../.env') });
+
 const app = express();
 const httpServer = createServer(app);
-const frontendOrigin = process.env.FRONTEND_URL || 'http://localhost:5173';
+
+const allowedOrigins = [
+  'http://localhost:5173',
+  'https://we-go-front-end.vercel.app',
+  process.env.FRONTEND_URL 
+].filter(Boolean);
 
 const io = new Server(httpServer, {
   cors: {
-    origin: frontendOrigin,
+    origin: allowedOrigins,
     credentials: true,
     methods: ['GET', 'POST']
   }
@@ -41,7 +46,7 @@ const io = new Server(httpServer, {
 const port = process.env.PORT || process.env.LOCAL_PORT || 10000;
 
 app.use(cors({
-  origin: frontendOrigin,
+  origin: allowedOrigins,
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'Accept']
@@ -90,7 +95,6 @@ io.on('connection', (socket) => {
         sockets.add(socket.id);
         activeUsers.set(userId, sockets);
         socket.userId = userId;
-        console.log(`👤 User ${userId} joined with socket ${socket.id}`);
 
       const currentSockets = activeUsers.get(userId);
       if (currentSockets && currentSockets.size === 1) {
@@ -99,7 +103,6 @@ io.on('connection', (socket) => {
           lastActive: new Date()
         });
         io.emit('userStatusChanged', { userId, isOnline: true });
-        console.log(`🟢 User ${userId} is now ONLINE`);
       }
     } catch (error) {
       console.error('Error handling user:join:', error);
@@ -109,7 +112,6 @@ io.on('connection', (socket) => {
   socket.on('chat:join', async (chatId) => {
     try {
       socket.join(`chat:${chatId}`);
-      console.log(`💬 Socket ${socket.id} joined chat ${chatId}`);
       
       const chat = await Chat.findById(chatId).populate({
         path: 'participants.user',
@@ -192,7 +194,6 @@ io.on('connection', (socket) => {
 
   socket.on('chat:leave', (chatId) => {
     socket.leave(`chat:${chatId}`);
-    console.log(`🚪 Socket ${socket.id} left chat ${chatId}`);
   });
 
   socket.on('message:send', async (data) => {
@@ -208,7 +209,6 @@ io.on('connection', (socket) => {
     try {
       const chat = await Chat.findById(chatId);
       if (!chat) {
-        console.log(`❌ Chat ${chatId} not found`);
         socket.emit('error', { message: 'Chat not found' });
         return;
       }
@@ -217,7 +217,6 @@ io.on('connection', (socket) => {
         p.user.toString() === senderId || p.user.equals(senderId)
       );
       if (!isParticipant) {
-        console.log(`❌ User ${senderId} is not a participant in chat ${chatId}`);
         socket.emit('error', { message: 'You are not a participant in this chat' });
         return;
       }
@@ -240,8 +239,6 @@ io.on('connection', (socket) => {
       socket.to(`chat:${chatId}`).emit('message:receive', newMessage);
       
       socket.emit('message:sent', newMessage);
-
-      console.log(`📤 Message sent to chat ${chatId} by user ${senderId}`);
     } catch (err) {
       console.error('❌ Socket message:send error:', err);
       socket.emit('error', { message: 'Failed to send message' });
@@ -270,7 +267,6 @@ io.on('connection', (socket) => {
 
   socket.on('dm:send', async (data) => {
     const { from, to, text, at } = data;
-    console.log(`💌 DM from ${from} to ${to}: ${text}`);
     
     try {
       const dm = new DirectMessage({
@@ -315,9 +311,6 @@ io.on('connection', (socket) => {
         recipientSockets.forEach((socketId) => {
           io.to(socketId).emit('dm:receive', enrichedMessage);
         });
-        console.log(`✅ DM delivered to ${to} (${recipientSockets.size} sockets)`);
-      } else {
-        console.log(`⚠️ Recipient ${to} is offline, DM saved but not delivered`);
       }
       
       socket.emit('dm:sent', enrichedMessage);
@@ -341,14 +334,10 @@ io.on('connection', (socket) => {
               lastActive: new Date()
             });
             io.emit('userStatusChanged', { userId, isOnline: false });
-            console.log(`⚫ User ${userId} is now OFFLINE`);
           } else {
             activeUsers.set(userId, sockets);
-            console.log(`🔌 Socket ${socket.id} disconnected for user ${userId}, still online on other sockets`);
           }
         }
-      } else {
-        console.log(`❌ Socket ${socket.id} disconnected`);
       }
     } catch (error) {
       console.error('Error handling disconnect:', error);
