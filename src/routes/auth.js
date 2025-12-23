@@ -15,21 +15,22 @@ const createTransporter = () => {
     console.error('[CONFIG ERROR] Missing EMAIL_USER or EMAIL_PASSWORD');
     return null;
   }
+
+  const host = process.env.EMAIL_HOST || 'smtp.resend.com';
+  const port = parseInt(process.env.EMAIL_PORT || '465');
+  const secure = process.env.EMAIL_SECURE === 'true' || port === 465;
+
   return nodemailer.createTransport({
-    host: 'smtp.gmail.com',
-    port: 465,
-    secure: true,
+    host: host,
+    port: port,
+    secure: secure,
     auth: {
       user: process.env.EMAIL_USER,
       pass: process.env.EMAIL_PASSWORD
     },
-    family: 4,
-    pool: false,
-    debug: true,
-    logger: true,
-    connectionTimeout: 20000,
-    greetingTimeout: 20000,
-    socketTimeout: 20000
+    tls: {
+      rejectUnauthorized: false
+    }
   });
 };
 
@@ -51,6 +52,8 @@ const verifyEmailConnection = async () => {
 verifyEmailConnection();
 
 const sendOTPEmail = async (email, otp) => {
+  const sender = process.env.EMAIL_FROM || 'onboarding@resend.dev';
+  
   const emailHtml = `
     <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; background: #f8fafc;">
       <div style="background: white; border-radius: 16px; padding: 40px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);">
@@ -66,14 +69,13 @@ const sendOTPEmail = async (email, otp) => {
   try {
     const transporter = createTransporter();
     if (transporter) {
-      console.log(`[INFO] Attempting to send OTP to ${email}...`);
       await transporter.sendMail({
-        from: `"WeGo Security" <${process.env.EMAIL_USER}>`,
+        from: `"WeGo Security" <${sender}>`,
         to: email,
         subject: 'WeGo - Password Reset OTP',
         html: emailHtml
       });
-      console.log(`[INFO] OTP sent to ${email} successfully`);
+      console.log(`[INFO] OTP sent to ${email} using ${sender}`);
       return { success: true };
     }
     
@@ -89,17 +91,11 @@ const sendOTPEmail = async (email, otp) => {
 };
 
 const sendResetEmail = async (email, token) => {
-  console.log('------------------------------------------------');
-  console.log('[DEBUG] Reading CLIENT_URL from Environment...');
-  console.log('[DEBUG] process.env.CLIENT_URL =', process.env.CLIENT_URL);
-
+  const sender = process.env.EMAIL_FROM || 'onboarding@resend.dev';
   const frontendUrl = process.env.CLIENT_URL || 'http://localhost:3000';
   const cleanUrl = frontendUrl.replace(/\/$/, '');
   const resetLink = `${cleanUrl}/auth/reset-password-confirm?token=${token}`;
   
-  console.log('[DEBUG] Generated Reset Link:', resetLink);
-  console.log('------------------------------------------------');
-
   const emailHtml = `
     <div style="font-family: Arial, sans-serif; padding: 20px;">
       <div style="background: white; padding: 30px; border-radius: 12px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
@@ -116,14 +112,13 @@ const sendResetEmail = async (email, token) => {
   try {
     const transporter = createTransporter();
     if (transporter) {
-      console.log(`[INFO] Attempting to send Link to ${email}...`);
       await transporter.sendMail({
-        from: `"WeGo Security" <${process.env.EMAIL_USER}>`,
+        from: `"WeGo Security" <${sender}>`,
         to: email,
         subject: 'WeGo - Password Reset Link',
         html: emailHtml
       });
-      console.log(`[INFO] Reset link sent to ${email}`);
+      console.log(`[INFO] Reset link sent to ${email} using ${sender}`);
       return { success: true };
     }
     
