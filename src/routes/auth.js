@@ -18,8 +18,8 @@ const createTransporter = () => {
   return nodemailer.createTransport({
     pool: true,
     host: 'smtp.gmail.com',
-    port: 465,
-    secure: true,
+    port: 587,
+    secure: false,
     auth: {
       user: process.env.EMAIL_USER,
       pass: process.env.EMAIL_PASSWORD
@@ -82,11 +82,9 @@ const sendOTPEmail = async (email, otp) => {
 };
 
 const sendResetEmail = async (email, token) => {
-  // --- DEBUG START ---
   console.log('------------------------------------------------');
   console.log('[DEBUG] Reading CLIENT_URL from Environment...');
   console.log('[DEBUG] process.env.CLIENT_URL =', process.env.CLIENT_URL);
-  // --- DEBUG END ---
 
   const frontendUrl = process.env.CLIENT_URL || 'http://localhost:3000';
   const cleanUrl = frontendUrl.replace(/\/$/, '');
