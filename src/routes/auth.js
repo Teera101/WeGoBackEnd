@@ -6,14 +6,6 @@ import User from '../models/user.js';
 import Profile from '../models/profile.js';
 import auth from '../middleware/auth.js';
 
-// --- DEBUG CHECK ---
-console.log('----------------------------------------');
-console.log('CHECKING EMAIL CONFIGURATION:');
-console.log('EMAIL_USER:', process.env.EMAIL_USER || 'NOT FOUND (Backend does not see email)');
-console.log('EMAIL_PASSWORD:', process.env.EMAIL_PASSWORD ? 'FOUND' : 'NOT FOUND');
-console.log('----------------------------------------');
-// -------------------
-
 const router = express.Router();
 
 const otpStore = new Map();
