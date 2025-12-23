@@ -7,6 +7,7 @@ import User from '../models/user.js';
 import Profile from '../models/profile.js';
 import auth from '../middleware/auth.js';
 
+
 const router = express.Router();
 
 const otpStore = new Map();
@@ -51,6 +52,7 @@ const sendOTPEmail = async (email, otp) => {
 
   try {
     const mailTransporter = initTransporter();
+    
     if (mailTransporter) {
       await mailTransporter.sendMail({
         from: `"WeGo Security" <${process.env.EMAIL_USER}>`,
@@ -65,6 +67,8 @@ const sendOTPEmail = async (email, otp) => {
       console.log(`[DEV ONLY] OTP for ${email}: ${otp}`);
       return { success: true, devMode: true };
     }
+    
+    console.error('Email Error: No email provider configured in environment variables');
     return { success: false, error: 'No email provider configured' };
   } catch (error) {
     console.error('Email send error:', error);
@@ -74,7 +78,8 @@ const sendOTPEmail = async (email, otp) => {
 
 const sendResetEmail = async (email, token) => {
   const frontendUrl = process.env.CLIENT_URL || 'http://localhost:3000';
-  const resetLink = `${frontendUrl}/auth/reset-password-confirm?token=${token}`;
+  const cleanUrl = frontendUrl.replace(/\/$/, '');
+  const resetLink = `${cleanUrl}/auth/reset-password-confirm?token=${token}`;
   
   const emailHtml = `
     <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
@@ -196,17 +201,13 @@ router.post('/forgot-password', async (req, res) => {
       return res.json({ message: 'If the email exists, an OTP has been sent' });
     }
 
-    // --- ส่วนที่ปรับแก้: ลบอันเก่าทิ้งทันทีถ้ามี (Force Update) ---
     const existingOTP = otpStore.get(email.toLowerCase());
     if (existingOTP) {
-      // เคลียร์ Timeout ของอันเก่าเพื่อไม่ให้ Memory Leak
       if (existingOTP.timeoutId) {
         clearTimeout(existingOTP.timeoutId);
       }
-      // ลบทิ้งเลย
       otpStore.delete(email.toLowerCase());
     }
-    // -----------------------------------------------------
 
     const otp = crypto.randomInt(100000, 999999).toString();
     const expiresAt = Date.now() + 10 * 60 * 1000;
@@ -226,9 +227,7 @@ router.post('/forgot-password', async (req, res) => {
     
     if (!result.success && !result.devMode) {
       otpStore.delete(email.toLowerCase());
-      // ถ้าส่งไม่ผ่าน ไม่ต้อง throw error ให้ frontend แต่ให้เงียบไว้ (เพื่อความปลอดภัย)
-      // หรือถ้าอยากรู้ Error จริงๆ ให้ uncomment บรรทัดล่าง
-      // throw new Error(result.error || 'Failed to send email');
+      console.error(`Failed to send OTP to ${email}: ${result.error}`);
     }
     
     res.json({ 
@@ -295,11 +294,17 @@ router.post('/forgot-password-link', async (req, res) => {
     const user = await User.findOne({ email: email.toLowerCase() });
     if (!user) return res.json({ message: 'If the email exists, a reset link has been sent' });
 
+    if (!process.env.JWT_SECRET) {
+      console.error('JWT_SECRET is missing in environment variables');
+      return res.status(500).json({ error: 'Server configuration error' });
+    }
+
     const token = jwt.sign({ _id: user._id.toString() }, process.env.JWT_SECRET, { expiresIn: '1h' });
     const result = await sendResetEmail(email, token);
 
     res.json({ message: 'If the email exists, a reset link has been sent', devLinkToken: result.devMode ? token : undefined });
   } catch (error) {
+    console.error('Forgot password link error:', error);
     res.status(500).json({ error: 'Failed to process request' });
   }
 });
@@ -311,6 +316,7 @@ router.post('/verify-reset-token', async (req, res) => {
 
     let payload;
     try {
+      if (!process.env.JWT_SECRET) throw new Error('JWT_SECRET missing');
       payload = jwt.verify(token, process.env.JWT_SECRET);
     } catch (err) {
       return res.status(400).json({ message: 'Invalid or expired token' });
@@ -333,6 +339,7 @@ router.post('/reset-password-confirm', async (req, res) => {
 
     let payload;
     try {
+      if (!process.env.JWT_SECRET) throw new Error('JWT_SECRET missing');
       payload = jwt.verify(token, process.env.JWT_SECRET);
     } catch (err) {
       return res.status(400).json({ message: 'Invalid or expired token' });
