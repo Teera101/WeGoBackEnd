@@ -51,7 +51,6 @@ router.post('/upload-cover', auth, upload.single('cover'), async (req, res) => {
   }
 });
 
-// ✅ 1. Endpoint ดึงข้อมูลกลุ่มจาก Chat ID
 router.get('/by-chat/:chatId', async (req, res) => {
   try {
     const event = await Activity.findOne({ chat: req.params.chatId });
@@ -66,23 +65,21 @@ router.get('/by-chat/:chatId', async (req, res) => {
   }
 });
 
-// ✅ 2. Endpoint สร้าง/แก้ไข รีวิว (Upsert)
 router.post('/reviews', auth, async (req, res) => {
   try {
     const { groupId, rating, comment } = req.body;
     const userId = req.user._id;
 
-    // ใช้ findOneAndUpdate เพื่อแก้ปัญหา Duplicate Key Error
     const review = await Review.findOneAndUpdate(
-      { groupId: groupId, userId: userId }, // ค้นหารีวิวเดิม
+      { groupId: groupId, userId: userId },
       { 
         rating, 
         comment,
         updatedAt: new Date() 
       }, 
       { 
-        new: true, // คืนค่าใหม่
-        upsert: true, // ถ้าไม่มีให้สร้างใหม่
+        new: true,
+        upsert: true,
         setDefaultsOnInsert: true 
       }
     );
@@ -94,7 +91,6 @@ router.post('/reviews', auth, async (req, res) => {
   }
 });
 
-// ✅ 3. Endpoint ดึงรีวิวของกลุ่ม
 router.get('/reviews/:groupId', async (req, res) => {
   try {
     const reviews = await Review.find({ groupId: req.params.groupId })
@@ -106,7 +102,6 @@ router.get('/reviews/:groupId', async (req, res) => {
   }
 });
 
-// ... (ส่วน Code เดิมด้านล่างคงไว้เหมือนเดิม) ...
 router.get('/', async (req, res) => {
   try {
     const events = await Activity.find()
@@ -157,6 +152,12 @@ router.post('/', auth, async (req, res) => {
     event.chat = chat._id;
     await event.save();
     await event.populate('createdBy', 'email');
+
+    const io = req.app.get('io');
+    if (io) {
+      io.emit('activity:create', event);
+    }
+
     res.status(201).json(event);
   } catch (error) {
     res.status(400).json({ error: error.message });
@@ -169,6 +170,12 @@ router.put('/:id', auth, async (req, res) => {
     if (!event) return res.status(404).json({ error: 'Event not found or access denied' });
     Object.assign(event, req.body);
     await event.save();
+
+    const io = req.app.get('io');
+    if (io) {
+      io.emit('activity:update', event);
+    }
+
     res.json(event);
   } catch (error) {
     res.status(400).json({ error: error.message });
@@ -179,6 +186,12 @@ router.delete('/:id', auth, async (req, res) => {
   try {
     const event = await Activity.findOneAndDelete({ _id: req.params.id, createdBy: req.user._id });
     if (!event) return res.status(404).json({ error: 'Event not found or access denied' });
+
+    const io = req.app.get('io');
+    if (io) {
+      io.emit('activity:delete', { _id: req.params.id });
+    }
+
     res.json({ message: 'Event deleted successfully' });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -214,10 +227,13 @@ router.post('/:id/join', auth, async (req, res) => {
     }
     try {
       const io = req.app.get('io');
-      if (io && chat) {
-        await chat.populate({ path: 'participants.user', select: 'email username isOnline createdAt', populate: { path: 'profile', select: 'avatar bio' } });
-        const parts = chat.participants.filter(p => p.user).map(p => ({ id: p.user._id, email: p.user.email, username: p.user.username, role: p.role, isOnline: !!p.user.isOnline, avatar: p.user.profile?.avatar || '', bio: p.user.profile?.bio || '', createdAt: p.user.createdAt }));
-        io.to(`chat:${chat._id}`).emit('chat:participants', { participants: parts });
+      if (io) {
+        io.emit('participant:update', { activityId: event._id });
+        if (chat) {
+          await chat.populate({ path: 'participants.user', select: 'email username isOnline createdAt', populate: { path: 'profile', select: 'avatar bio' } });
+          const parts = chat.participants.filter(p => p.user).map(p => ({ id: p.user._id, email: p.user.email, username: p.user.username, role: p.role, isOnline: !!p.user.isOnline, avatar: p.user.profile?.avatar || '', bio: p.user.profile?.bio || '', createdAt: p.user.createdAt }));
+          io.to(`chat:${chat._id}`).emit('chat:participants', { participants: parts });
+        }
       }
     } catch (emitErr) { console.error(emitErr); }
     res.json({ message: 'Successfully joined event', activity: event, chatId: chat._id });
@@ -233,12 +249,16 @@ router.post('/:id/leave', auth, async (req, res) => {
     if (!event) return res.status(404).json({ error: 'Event not found' });
     await event.removeParticipant(userId);
     try {
+      const io = req.app.get('io');
+      if (io) {
+        io.emit('participant:update', { activityId: event._id });
+      }
+
       if (event.chat) {
         const chat = await Chat.findById(event.chat);
         if (chat) {
           chat.participants = chat.participants.filter(p => !(p.user && p.user.toString() === userId.toString()));
           await chat.save();
-          const io = req.app.get('io');
           if (io) {
             await chat.populate({ path: 'participants.user', select: 'email username isOnline createdAt', populate: { path: 'profile', select: 'avatar bio' } });
             const parts = chat.participants.filter(p => p.user).map(p => ({ id: p.user._id, email: p.user.email, username: p.user.username, role: p.role, isOnline: !!p.user.isOnline, avatar: p.user.profile?.avatar || '', bio: p.user.profile?.bio || '', createdAt: p.user.createdAt }));
