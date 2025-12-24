@@ -27,9 +27,7 @@ export const initSocket = (server) => {
 
     socket.on('user:join', async (userId) => {
       try {
-        if (socket.userId && socket.userId === userId) {
-          return;
-        }
+        if (socket.userId && socket.userId === userId) return;
 
         let sockets = activeUsers.get(userId);
         if (!sockets) sockets = new Set();
@@ -178,7 +176,6 @@ export const initSocket = (server) => {
         }
 
         socket.to(`chat:${chatId}`).emit('message:receive', newMessage);
-        
         socket.emit('message:sent', newMessage);
       } catch (err) {
         console.error(err);
@@ -210,11 +207,7 @@ export const initSocket = (server) => {
       const { from, to, text } = data;
       
       try {
-        const dm = new DirectMessage({
-          from,
-          to,
-          text
-        });
+        const dm = new DirectMessage({ from, to, text });
         await dm.save();
         
         await dm.populate([
