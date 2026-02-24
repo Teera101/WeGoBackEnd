@@ -94,7 +94,6 @@ router.post('/reviews', auth, async (req, res) => {
 router.get('/reviews/:groupId', async (req, res) => {
   try {
     const reviews = await Review.find({ groupId: req.params.groupId })
-      // ✅ เพิ่ม username ตรงนี้ครับ
       .populate('userId', 'username name avatar email') 
       .sort({ updatedAt: -1 });
     res.json(reviews);
@@ -137,13 +136,24 @@ router.post('/', auth, async (req, res) => {
       createdBy: userId,
       participants: [{ user: userId, joinedAt: new Date() }]
     };
+    
+    // จัดการข้อมูลแผนที่แบบใหม่ที่ถูกต้อง
     if (req.body.location) {
-      if (typeof req.body.location === 'string') {
-        eventData.location = { address: req.body.location, coordinates: { type: 'Point', coordinates: [0, 0] } };
-      } else if (typeof req.body.location === 'object' && !req.body.location.address) {
-        eventData.location = { address: req.body.location.address || '', coordinates: req.body.location.coordinates || { type: 'Point', coordinates: [0, 0] } };
+      let locData = req.body.location;
+      if (typeof locData === 'string') {
+        try { locData = JSON.parse(locData); } catch (e) { locData = { address: locData }; }
       }
+      
+      eventData.location = { 
+        address: locData.address || '', 
+        details: locData.details || '',
+        coordinates: { 
+          type: 'Point', 
+          coordinates: (Array.isArray(locData.coordinates) && locData.coordinates.length === 2) ? locData.coordinates : [0, 0] 
+        } 
+      };
     }
+
     const event = new Activity(eventData);
     await event.save();
     const chat = new Chat({ type: 'group', name: event.title, participants: [{ user: userId, role: 'admin', joinedAt: new Date() }], createdBy: userId });
