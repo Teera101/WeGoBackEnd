@@ -26,7 +26,7 @@ const app = express();
 const httpServer = createServer(app);
 
 const allowedOrigins = [
-  'http://localhost:5173',
+  'http://localhost:5173', 
   'https://we-go-front-end.vercel.app',
   process.env.FRONTEND_URL 
 ].filter(Boolean);
