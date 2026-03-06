@@ -1,6 +1,7 @@
 import express from 'express';
 import Chat from '../models/chat.js';
 import DirectMessage from '../models/directmessage.js';
+import Profile from '../models/profile.js';
 import auth from '../middleware/auth.js';
 
 const router = express.Router();
@@ -30,30 +31,43 @@ router.get('/unread', auth, async (req, res) => {
     const unreadChatIds = new Set();
     const detailsMap = new Map();
 
+    const allUserIds = new Set();
+    userChats.forEach(chat => {
+      chat.participants.forEach(p => { if (p.user) allUserIds.add(p.user._id.toString()); });
+      chat.messages.forEach(m => { if (m.sender) allUserIds.add(m.sender._id?.toString() || m.sender.toString()); });
+    });
+    unreadDMsRaw.forEach(dm => { if (dm.from) allUserIds.add(dm.from._id.toString()); });
+
+    const profiles = await Profile.find({ userId: { $in: Array.from(allUserIds) } });
+    const profileMap = {};
+    profiles.forEach(p => { if (p.userId) profileMap[p.userId.toString()] = p.avatar || ''; });
+
     for (const chat of userChats) {
       if (!chat.messages || !Array.isArray(chat.messages)) continue;
 
       const participant = chat.participants.find(p => p.user && p.user._id.toString() === userId);
       if (!participant) continue;
 
+      const lastReadTime = participant.lastRead ? new Date(participant.lastRead).getTime() : 0;
       let chatUnreadCount = 0;
       let lastUnreadMsg = null;
 
       for (const msg of chat.messages) {
         if (msg.isDeleted) continue;
-
         const senderStr = msg.sender && msg.sender._id ? msg.sender._id.toString() : (msg.sender ? msg.sender.toString() : '');
         if (senderStr === userId) continue;
 
-        let isReadByMe = false;
-        if (msg.readBy && Array.isArray(msg.readBy)) {
-          isReadByMe = msg.readBy.some(r => r.user && r.user.toString() === userId);
-        }
-
-        if (!isReadByMe) {
-          chatUnreadCount++;
-          totalUnreadCount++;
-          lastUnreadMsg = msg;
+        const msgTime = new Date(msg.createdAt).getTime();
+        if (msgTime > lastReadTime) {
+          let isReadByMe = false;
+          if (msg.readBy && Array.isArray(msg.readBy)) {
+            isReadByMe = msg.readBy.some(r => r.user && r.user.toString() === userId);
+          }
+          if (!isReadByMe) {
+            chatUnreadCount++;
+            totalUnreadCount++;
+            lastUnreadMsg = msg;
+          }
         }
       }
 
@@ -61,27 +75,36 @@ router.get('/unread', auth, async (req, res) => {
         unreadChatIds.add(chat._id.toString());
         
         let chatName = 'แชทกลุ่ม';
-        if (chat.type === 'group' && chat.groupInfo && chat.groupInfo.name) {
-          chatName = chat.groupInfo.name;
+        let chatAvatar = '';
+        let targetUid = chat._id.toString();
+
+        if (chat.type === 'group') {
+          chatName = chat.groupInfo?.name || 'แชทกลุ่ม';
+          chatAvatar = chat.groupInfo?.avatar || '';
         } else if (chat.type === 'direct') {
-          const otherUser = chat.participants.find(p => p.user && p.user._id.toString() !== userId);
-          if (otherUser && otherUser.user && otherUser.user.username) {
-            chatName = otherUser.user.username;
-          } else {
-            chatName = 'แชทส่วนตัว';
+          const otherP = chat.participants.find(p => p.user && p.user._id.toString() !== userId);
+          if (otherP && otherP.user) {
+            chatName = otherP.user.username || 'แชทส่วนตัว';
+            chatAvatar = profileMap[otherP.user._id.toString()] || '';
+            targetUid = otherP.user._id.toString();
           }
         }
 
-        let messagePreview = lastUnreadMsg.content;
-        if (lastUnreadMsg.type === 'image') messagePreview = '[รูปภาพ]';
-        else if (lastUnreadMsg.type === 'file') messagePreview = '[ไฟล์]';
-        else if (lastUnreadMsg.type === 'system') messagePreview = '[ข้อความระบบ]';
+        const senderIdStr = lastUnreadMsg.sender?._id?.toString() || lastUnreadMsg.sender?.toString();
+        const senderAvatar = profileMap[senderIdStr] || '';
+
+        let preview = lastUnreadMsg.content;
+        if (lastUnreadMsg.type === 'image') preview = '[ส่งรูปภาพ]';
+        else if (lastUnreadMsg.type === 'file') preview = '[ส่งไฟล์]';
 
         detailsMap.set(chat._id.toString(), {
           chatId: chat._id.toString(),
+          targetUid,
           name: chatName,
-          senderName: lastUnreadMsg.sender && lastUnreadMsg.sender.username ? lastUnreadMsg.sender.username : 'สมาชิก',
-          lastMessage: messagePreview,
+          senderName: lastUnreadMsg.sender?.username || 'สมาชิก',
+          senderAvatar,
+          chatAvatar,
+          lastMessage: preview,
           time: lastUnreadMsg.createdAt || new Date(),
           count: chatUnreadCount,
           type: chat.type
@@ -90,33 +113,35 @@ router.get('/unread', auth, async (req, res) => {
     }
 
     for (const dm of unreadDMsRaw) {
-      if (!dm.from || !dm.from._id) continue;
-      
+      if (!dm.from) continue;
       totalUnreadCount++;
       const senderId = dm.from._id.toString();
+      const senderAvatar = profileMap[senderId] || '';
       
       if (!detailsMap.has(senderId)) {
         detailsMap.set(senderId, {
           chatId: senderId,
+          targetUid: senderId,
           name: dm.from.username || 'ผู้ใช้',
           senderName: dm.from.username || 'ผู้ใช้',
+          senderAvatar: senderAvatar,
+          chatAvatar: senderAvatar,
           lastMessage: dm.text,
-          time: dm.createdAt || new Date(),
+          time: dm.createdAt,
           count: 0,
           type: 'direct_msg'
         });
       }
       
-      const currentDm = detailsMap.get(senderId);
-      currentDm.count++;
-      
-      if (new Date(dm.createdAt).getTime() > new Date(currentDm.time).getTime()) {
-         currentDm.lastMessage = dm.text;
-         currentDm.time = dm.createdAt;
+      const entry = detailsMap.get(senderId);
+      entry.count++;
+      if (new Date(dm.createdAt) > new Date(entry.time)) {
+        entry.lastMessage = dm.text;
+        entry.time = dm.createdAt;
       }
     }
 
-    const detailsArray = Array.from(detailsMap.values()).sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime());
+    const detailsArray = Array.from(detailsMap.values()).sort((a, b) => new Date(b.time) - new Date(a.time));
 
     res.json({
       totalUnread: totalUnreadCount,
@@ -130,30 +155,29 @@ router.get('/unread', auth, async (req, res) => {
 
 router.put('/read-all', auth, async (req, res) => {
   try {
-    const userId = req.user._id;
-
-    await DirectMessage.updateMany(
-      { to: userId, isRead: false },
-      { $set: { isRead: true, readAt: new Date() } }
+    const userId = req.user._id.toString();
+    await DirectMessage.updateMany({ to: req.user._id, isRead: false }, { $set: { isRead: true, readAt: new Date() } });
+    
+    await Chat.updateMany(
+      { "participants.user": req.user._id },
+      { $set: { "participants.$.lastRead": new Date() } }
     );
 
-    const chats = await Chat.find({ 'participants.user': userId });
+    const chats = await Chat.find({ 'participants.user': req.user._id });
     for (const chat of chats) {
-      const participant = chat.participants.find(p => p.user && p.user.equals(userId));
-      if (participant) {
-        participant.lastRead = new Date();
-      }
+      let modified = false;
       chat.messages.forEach(msg => {
-        if (msg.readBy && !msg.readBy.some(r => r.user && r.user.equals(userId))) {
-          msg.readBy.push({ user: userId, readAt: new Date() });
+        if (msg.readBy && !msg.readBy.some(r => r.user && r.user.toString() === userId)) {
+          msg.readBy.push({ user: req.user._id, readAt: new Date() });
+          modified = true;
         }
       });
-      chat.markModified('participants');
-      chat.markModified('messages');
-      await chat.save();
+      if (modified) {
+        chat.markModified('messages');
+        await chat.save();
+      }
     }
-
-    res.json({ message: 'All chats marked as read' });
+    res.json({ message: 'Success' });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -161,11 +185,66 @@ router.put('/read-all', auth, async (req, res) => {
 
 router.put('/read-dm/:senderId', auth, async (req, res) => {
   try {
+    const userId = req.user._id.toString();
+    const senderId = req.params.senderId;
+
     await DirectMessage.updateMany(
-      { to: req.user._id, from: req.params.senderId, isRead: false },
+      { to: req.user._id, from: senderId, isRead: false }, 
       { $set: { isRead: true, readAt: new Date() } }
     );
-    res.json({ message: 'DM marked as read' });
+
+    const chats = await Chat.find({
+      type: 'direct',
+      'participants.user': { $all: [req.user._id, senderId] }
+    });
+
+    for (const chat of chats) {
+      await Chat.updateOne(
+        { _id: chat._id, "participants.user": req.user._id },
+        { $set: { "participants.$.lastRead": new Date() } }
+      );
+      let modified = false;
+      chat.messages.forEach(msg => {
+        if (msg.readBy && !msg.readBy.some(r => r.user && r.user.toString() === userId)) {
+          msg.readBy.push({ user: req.user._id, readAt: new Date() });
+          modified = true;
+        }
+      });
+      if (modified) {
+        chat.markModified('messages');
+        await chat.save();
+      }
+    }
+    res.json({ message: 'Success' });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+router.put('/read-chat/:chatId', auth, async (req, res) => {
+  try {
+    const userId = req.user._id.toString();
+    
+    await Chat.updateOne(
+      { _id: req.params.chatId, "participants.user": req.user._id },
+      { $set: { "participants.$.lastRead": new Date() } }
+    );
+
+    const chat = await Chat.findById(req.params.chatId);
+    if (chat) {
+      let modified = false;
+      chat.messages.forEach(msg => {
+        if (msg.readBy && !msg.readBy.some(r => r.user && r.user.toString() === userId)) {
+          msg.readBy.push({ user: req.user._id, readAt: new Date() });
+          modified = true;
+        }
+      });
+      if (modified) {
+        chat.markModified('messages');
+        await chat.save();
+      }
+    }
+    res.json({ message: 'Success' });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
