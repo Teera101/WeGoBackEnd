@@ -123,13 +123,7 @@ chatSchema.index({ type: 1, isActive: 1 });
 chatSchema.index({ 'groupInfo.relatedActivity': 1 });
 chatSchema.index({ lastMessageAt: -1 });
 chatSchema.index({ 'participants.user': 1, lastMessageAt: -1 });
-
-chatSchema.index({ 
-  type: 1, 
-  'participants.user': 1 
-}, { 
-  name: 'direct_chat_index' 
-});
+chatSchema.index({ type: 1, 'participants.user': 1 }, { name: 'direct_chat_index' });
 
 chatSchema.methods.addMessage = async function(senderId, content, type = 'text', fileUrl = null) {
   const message = {
@@ -137,7 +131,7 @@ chatSchema.methods.addMessage = async function(senderId, content, type = 'text',
     content: content,
     type: type,
     fileUrl: fileUrl,
-    readBy: [{ user: senderId }]
+    readBy: [{ user: senderId, readAt: new Date() }]
   };
   
   this.messages.push(message);
@@ -181,26 +175,34 @@ chatSchema.methods.removeParticipant = async function(userId) {
 };
 
 chatSchema.methods.markAsRead = async function(userId, messageIds = []) {
-  if (messageIds.length === 0) {
-    this.messages.forEach(msg => {
-      if (!msg.readBy.some(r => r.user.equals(userId))) {
-        msg.readBy.push({ user: userId, readAt: new Date() });
-      }
-    });
-  } else {
-    messageIds.forEach(msgId => {
-      const message = this.messages.id(msgId);
-      if (message && !message.readBy.some(r => r.user.equals(userId))) {
-        message.readBy.push({ user: userId, readAt: new Date() });
-      }
-    });
-  }
-  
   const participant = this.participants.find(p => p.user && p.user.equals(userId));
   if (participant) {
     participant.lastRead = new Date();
   }
   
+  if (messageIds && messageIds.length > 0) {
+    messageIds.forEach(msgId => {
+      const message = this.messages.id(msgId);
+      if (message) {
+        const hasRead = message.readBy && message.readBy.some(r => r.user && r.user.equals(userId));
+        if (!hasRead) {
+          if (!message.readBy) message.readBy = [];
+          message.readBy.push({ user: userId, readAt: new Date() });
+        }
+      }
+    });
+  } else {
+    this.messages.forEach(msg => {
+      const hasRead = msg.readBy && msg.readBy.some(r => r.user && r.user.equals(userId));
+      if (!hasRead) {
+        if (!msg.readBy) msg.readBy = [];
+        msg.readBy.push({ user: userId, readAt: new Date() });
+      }
+    });
+  }
+  
+  this.markModified('participants');
+  this.markModified('messages');
   return await this.save();
 };
 
@@ -208,11 +210,14 @@ chatSchema.methods.getUnreadCount = function(userId) {
   const participant = this.participants.find(p => p.user && p.user.equals(userId));
   if (!participant) return 0;
   
-  return this.messages.filter(msg => 
-    msg.createdAt > participant.lastRead && 
-    !msg.sender.equals(userId) &&
-    !msg.isDeleted
-  ).length;
+  const lastReadTime = participant.lastRead ? new Date(participant.lastRead).getTime() : 0;
+
+  return this.messages.filter(msg => {
+    if (msg.isDeleted) return false;
+    const msgTime = msg.createdAt ? new Date(msg.createdAt).getTime() : 0;
+    const isNotSender = msg.sender && !msg.sender.equals(userId);
+    return isNotSender && msgTime > lastReadTime;
+  }).length;
 };
 
 chatSchema.statics.createDirectChat = async function(user1Id, user2Id) {
