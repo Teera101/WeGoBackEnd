@@ -57,17 +57,22 @@ router.get('/unread', auth, async (req, res) => {
         const senderStr = msg.sender && msg.sender._id ? msg.sender._id.toString() : (msg.sender ? msg.sender.toString() : '');
         if (senderStr === userId) continue;
 
-        const msgTime = new Date(msg.createdAt).getTime();
-        if (msgTime > lastReadTime) {
-          let isReadByMe = false;
-          if (msg.readBy && Array.isArray(msg.readBy)) {
-            isReadByMe = msg.readBy.some(r => r.user && r.user.toString() === userId);
+        let isReadByMe = false;
+        
+        if (msg.readBy && Array.isArray(msg.readBy) && msg.readBy.length > 0) {
+          isReadByMe = msg.readBy.some(r => r.user && r.user.toString() === userId);
+        } else {
+          // เผื่อไว้สำหรับข้อความเก่ามากๆ ที่ไม่มีระบบ readBy
+          const msgTime = new Date(msg.createdAt).getTime();
+          if (msgTime <= lastReadTime) {
+            isReadByMe = true;
           }
-          if (!isReadByMe) {
-            chatUnreadCount++;
-            totalUnreadCount++;
-            lastUnreadMsg = msg;
-          }
+        }
+
+        if (!isReadByMe) {
+          chatUnreadCount++;
+          totalUnreadCount++;
+          lastUnreadMsg = msg;
         }
       }
 
@@ -157,17 +162,19 @@ router.get('/unread', auth, async (req, res) => {
 router.put('/read-all', auth, async (req, res) => {
   try {
     const userId = req.user._id.toString();
-    await DirectMessage.updateMany({ to: req.user._id, isRead: false }, { $set: { isRead: true, readAt: new Date() } });
+    const readTime = new Date(); 
+    
+    await DirectMessage.updateMany({ to: req.user._id, isRead: false }, { $set: { isRead: true, readAt: readTime } });
     
     const chats = await Chat.find({ 'participants.user': req.user._id });
     for (const chat of chats) {
       const p = chat.participants.find(part => part.user && part.user.toString() === userId);
-      if (p) p.lastRead = new Date();
+      if (p) p.lastRead = readTime;
       
       chat.messages.forEach(msg => {
         if (!msg.readBy) msg.readBy = [];
         if (!msg.readBy.some(r => r.user && r.user.toString() === userId)) {
-          msg.readBy.push({ user: req.user._id, readAt: new Date() });
+          msg.readBy.push({ user: req.user._id, readAt: readTime });
         }
       });
       chat.markModified('participants');
@@ -184,25 +191,29 @@ router.put('/read-dm/:targetId', auth, async (req, res) => {
   try {
     const userId = req.user._id.toString();
     const targetId = req.params.targetId;
+    const readTime = new Date(); 
 
     await DirectMessage.updateMany(
       { to: req.user._id, from: targetId, isRead: false }, 
-      { $set: { isRead: true, readAt: new Date() } }
+      { $set: { isRead: true, readAt: readTime } }
     );
 
-    const chats = await Chat.find({
-      type: 'direct',
-      'participants.user': { $all: [req.user._id, targetId] }
-    });
+    let chat = await Chat.findOne({ _id: targetId, type: 'direct' }).catch(() => null);
+    if (!chat) {
+      chat = await Chat.findOne({
+        type: 'direct',
+        'participants.user': { $all: [req.user._id, targetId] }
+      });
+    }
 
-    for (const chat of chats) {
+    if (chat) {
       const p = chat.participants.find(part => part.user && part.user.toString() === userId);
-      if (p) p.lastRead = new Date();
+      if (p) p.lastRead = readTime;
       
       chat.messages.forEach(msg => {
         if (!msg.readBy) msg.readBy = [];
         if (!msg.readBy.some(r => r.user && r.user.toString() === userId)) {
-          msg.readBy.push({ user: req.user._id, readAt: new Date() });
+          msg.readBy.push({ user: req.user._id, readAt: readTime });
         }
       });
       chat.markModified('participants');
@@ -218,16 +229,17 @@ router.put('/read-dm/:targetId', auth, async (req, res) => {
 router.put('/read-chat/:chatId', auth, async (req, res) => {
   try {
     const userId = req.user._id.toString();
+    const readTime = new Date(); 
     const chat = await Chat.findById(req.params.chatId);
     
     if (chat) {
       const p = chat.participants.find(part => part.user && part.user.toString() === userId);
-      if (p) p.lastRead = new Date();
+      if (p) p.lastRead = readTime;
       
       chat.messages.forEach(msg => {
         if (!msg.readBy) msg.readBy = [];
         if (!msg.readBy.some(r => r.user && r.user.toString() === userId)) {
-          msg.readBy.push({ user: req.user._id, readAt: new Date() });
+          msg.readBy.push({ user: req.user._id, readAt: readTime });
         }
       });
       chat.markModified('participants');
