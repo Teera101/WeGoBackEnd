@@ -23,7 +23,7 @@ const eventSchema = new mongoose.Schema({
     type: String
   }],
   location: {
-    type: String,
+    type: mongoose.Schema.Types.Mixed,
     required: true
   },
   time: {

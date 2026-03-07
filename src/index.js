@@ -15,6 +15,8 @@ import adminRoutes from './routes/admin.js';
 import directMessageRoutes from './routes/directmessages.js';
 import uploadsRoutes from './routes/uploads.js';
 import reportsRoutes from './routes/reports.js';
+import notificationRoutes from './routes/notifications.js';
+import chatStatusRoutes from './routes/chatStatus.js';
 import { initSocket } from './socket.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -26,7 +28,7 @@ const app = express();
 const httpServer = createServer(app);
 
 const allowedOrigins = [
-  'http://localhost:5173', 
+  'http://localhost:5173',
   'https://we-go-front-end.vercel.app',
   process.env.FRONTEND_URL 
 ].filter(Boolean);
@@ -61,13 +63,14 @@ app.use('/api/directmessages', directMessageRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/uploads', uploadsRoutes);
 app.use('/api/reports', reportsRoutes);
+app.use('/api/notifications', notificationRoutes);
+app.use('/api/chat-status', chatStatusRoutes);
 
 app.get('/_health', (req, res) => {
   res.json({ ok: true, time: new Date().toISOString(), commit: process.env.COMMIT_ID || null });
 });
 
 app.use((err, req, res, next) => {
-  console.error(err.stack);
   res.status(500).json({ error: 'Something went wrong!' });
 });
 

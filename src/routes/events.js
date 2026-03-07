@@ -6,6 +6,7 @@ import Activity from '../models/activity.js';
 import Chat from '../models/chat.js';
 import Group from '../models/group.js';
 import Review from '../models/review.js';
+import Notification from '../models/notification.js';
 import auth from '../middleware/auth.js';
 import { uploadBuffer } from '../lib/cloudinary.js';
 
@@ -43,7 +44,6 @@ router.post('/upload-cover', auth, upload.single('cover'), async (req, res) => {
       const uploaded = await uploadBuffer(buffer, { public_id: pub, folder: 'wego/events', resource_type: 'image' });
       return res.json({ url: uploaded.secure_url, public_id: uploaded.public_id });
     } catch (upErr) {
-      console.error('Cloudinary upload error for cover:', upErr);
       return res.status(500).json({ error: 'Failed to upload cover image' });
     }
   } catch (error) {
@@ -86,7 +86,6 @@ router.post('/reviews', auth, async (req, res) => {
 
     res.json(review);
   } catch (error) {
-    console.error("Review Error:", error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -137,7 +136,6 @@ router.post('/', auth, async (req, res) => {
       participants: [{ user: userId, joinedAt: new Date() }]
     };
     
-    // จัดการข้อมูลแผนที่แบบใหม่ที่ถูกต้อง
     if (req.body.location) {
       let locData = req.body.location;
       if (typeof locData === 'string') {
@@ -246,7 +244,20 @@ router.post('/:id/join', auth, async (req, res) => {
           io.to(`chat:${chat._id}`).emit('chat:participants', { participants: parts });
         }
       }
-    } catch (emitErr) { console.error(emitErr); }
+    } catch (emitErr) {}
+
+    if (event.createdBy.toString() !== userId.toString()) {
+      const notification = new Notification({
+        recipient: event.createdBy,
+        sender: userId,
+        type: 'activity_join',
+        title: 'มีผู้เข้าร่วมกิจกรรมใหม่',
+        message: `ได้เข้าร่วมกิจกรรม "${event.title}" ของคุณ`,
+        relatedId: event._id
+      });
+      await notification.save();
+    }
+
     res.json({ message: 'Successfully joined event', activity: event, chatId: chat._id });
   } catch (error) {
     res.status(400).json({ error: error.message });

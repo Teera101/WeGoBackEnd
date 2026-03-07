@@ -135,22 +135,6 @@ export const initSocket = (server) => {
       socket.leave(`chat:${chatId}`);
     });
 
-    socket.on('chat:kick', (data) => {
-      const { chatId, userId } = data;
-      io.to(`chat:${chatId}`).emit('chat:participants'); 
-      io.to(`chat:${chatId}`).emit('chat:kicked', { userId, chatId }); 
-
-      const userSocketIds = activeUsers.get(userId);
-      if (userSocketIds) {
-        userSocketIds.forEach(socketId => {
-          const targetSocket = io.sockets.sockets.get(socketId);
-          if (targetSocket) {
-            targetSocket.leave(`chat:${chatId}`);
-          }
-        });
-      }
-    });
-
     socket.on('message:send', async (data) => {
       const { chatId, userId, sender, content, type = 'text', fileUrl } = data;
       let senderId = userId || sender;
