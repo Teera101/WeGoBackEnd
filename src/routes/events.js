@@ -7,6 +7,7 @@ import Chat from '../models/chat.js';
 import Group from '../models/group.js';
 import Review from '../models/review.js';
 import Notification from '../models/notification.js';
+import Profile from '../models/profile.js';
 import auth from '../middleware/auth.js';
 import { uploadBuffer } from '../lib/cloudinary.js';
 
@@ -96,6 +97,70 @@ router.get('/reviews/:groupId', async (req, res) => {
       .populate('userId', 'username name avatar email') 
       .sort({ updatedAt: -1 });
     res.json(reviews);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+router.get('/matchmaking', auth, async (req, res) => {
+  try {
+    const profile = await Profile.findOne({ userId: req.user._id });
+    const userTags = profile && profile.tags ? profile.tags : [];
+    const userId = req.user._id;
+
+    if (userTags.length === 0) {
+      return res.json([]);
+    }
+
+    const matchedEvents = await Activity.aggregate([
+      {
+        $match: {
+          'participants.user': { $ne: userId }
+        }
+      },
+      {
+        $addFields: {
+          matchScore: {
+            $size: {
+              $setIntersection: [
+                { $ifNull: ["$tags", []] },
+                userTags
+              ]
+            }
+          }
+        }
+      },
+      {
+        $match: {
+          matchScore: { $gt: 0 }
+        }
+      },
+      {
+        $sort: {
+          matchScore: -1,
+          date: 1
+        }
+      },
+      {
+        $limit: 10
+      }
+    ]);
+
+    const populatedEvents = await Activity.populate(matchedEvents, { path: 'createdBy', select: 'email' });
+
+    res.json(populatedEvents);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+router.get('/search/filter', async (req, res) => {
+  try {
+    const { tags } = req.query;
+    const filters = {};
+    if (tags) filters.tags = { $in: tags.split(',') };
+    const events = await Activity.find(filters).populate('createdBy', 'email').sort({ date: 1 }).limit(50);
+    res.json(events);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -297,18 +362,6 @@ router.post('/:id/leave', auth, async (req, res) => {
     res.json({ message: 'Successfully left event', activity: event });
   } catch (error) {
     res.status(400).json({ error: error.message });
-  }
-});
-
-router.get('/search/filter', async (req, res) => {
-  try {
-    const { tags } = req.query;
-    const filters = { status: 'published', visibility: 'public' };
-    if (tags) filters.tags = { $in: tags.split(',') };
-    const events = await Activity.find(filters).populate('createdBy', 'email').sort({ date: 1 }).limit(50);
-    res.json(events);
-  } catch (error) {
-    res.status(500).json({ error: error.message });
   }
 });
 

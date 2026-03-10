@@ -18,6 +18,7 @@ import reportsRoutes from './routes/reports.js';
 import notificationRoutes from './routes/notifications.js';
 import chatStatusRoutes from './routes/chatStatus.js';
 import { initSocket } from './socket.js';
+import { startCleanupCron } from './utils/cleanupCron.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -73,6 +74,8 @@ app.get('/_health', (req, res) => {
 app.use((err, req, res, next) => {
   res.status(500).json({ error: 'Something went wrong!' });
 });
+
+startCleanupCron();
 
 httpServer.listen(port, '0.0.0.0', () => {
   console.log(`🚀 Server is running on port ${port}`);

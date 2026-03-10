@@ -30,7 +30,7 @@ const activitySchema = new mongoose.Schema({
         default: 'Point'
       },
       coordinates: {
-        type: [Number], // [longitude, latitude]
+        type: [Number],
         default: [0, 0]
       }
     }
@@ -173,6 +173,10 @@ const activitySchema = new mongoose.Schema({
     enum: ['public', 'private'],
     default: 'public'
   },
+  isImportant: {
+    type: Boolean,
+    default: false
+  },
   chat: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Chat'
@@ -187,7 +191,6 @@ const activitySchema = new mongoose.Schema({
 });
 
 activitySchema.index({ 'location.coordinates': '2dsphere' });
-
 activitySchema.index({ createdBy: 1, createdAt: -1 });
 activitySchema.index({ date: 1, status: 1 });
 activitySchema.index({ tags: 1 });
