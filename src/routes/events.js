@@ -232,6 +232,32 @@ router.post('/', auth, async (req, res) => {
       io.emit('activity:create', event);
     }
 
+    try {
+      if (event.tags && event.tags.length > 0) {
+        const matchedProfiles = await Profile.find({
+          userId: { $ne: userId },
+          tags: { $in: event.tags }
+        });
+
+        for (const profile of matchedProfiles) {
+          const notification = new Notification({
+            recipient: profile.userId,
+            sender: userId,
+            type: 'recommendation',
+            title: '✨ กิจกรรมใหม่ที่ตรงใจคุณ!',
+            message: `กิจกรรม "${event.title}" เพิ่งเปิดรับสมัครและมีแท็กตรงกับความสนใจของคุณ`,
+            relatedId: event._id
+          });
+          await notification.save();
+
+          if (io) {
+            io.to(profile.userId.toString()).emit('notification:new', notification);
+          }
+        }
+      }
+    } catch (notiErr) {
+    }
+
     res.status(201).json(event);
   } catch (error) {
     res.status(400).json({ error: error.message });
@@ -321,6 +347,11 @@ router.post('/:id/join', auth, async (req, res) => {
         relatedId: event._id
       });
       await notification.save();
+      
+      const io = req.app.get('io');
+      if (io) {
+        io.to(event.createdBy.toString()).emit('notification:new', notification);
+      }
     }
 
     res.json({ message: 'Successfully joined event', activity: event, chatId: chat._id });

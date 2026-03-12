@@ -11,13 +11,12 @@ const router = express.Router();
 const otpStore = new Map();
 
 const createTransporter = () => {
-  const host = process.env.EMAIL_HOST || 'smtp.resend.com';
-  const port = parseInt(process.env.EMAIL_PORT || '465');
+  const host = process.env.EMAIL_HOST;
+  const port = parseInt(process.env.EMAIL_PORT || '587');
   const user = process.env.EMAIL_USER;
   const pass = process.env.EMAIL_PASSWORD;
 
   if (!user || !pass) {
-    console.error('[CONFIG ERROR] Missing EMAIL_USER or EMAIL_PASSWORD');
     return null;
   }
 
@@ -28,33 +27,25 @@ const createTransporter = () => {
     auth: {
       user: user,
       pass: pass
-    },
-    family: 4,
-    connectionTimeout: 30000,
-    greetingTimeout: 30000,
-    socketTimeout: 30000
+    }
   });
 };
 
 const verifyEmailConnection = async () => {
-  console.log('[INFO] Checking email configuration...');
   const transporter = createTransporter();
   if (!transporter) {
-    console.log('[WARN] Email config missing, skipping verification');
     return;
   }
   try {
     await transporter.verify();
-    console.log(`[INFO] Email server ready (Host: ${process.env.EMAIL_HOST || 'smtp.resend.com'})`);
   } catch (error) {
-    console.error('[ERROR] Email connection failed:', error.message);
   }
 };
 
 verifyEmailConnection();
 
 const sendOTPEmail = async (email, otp) => {
-  const sender = process.env.EMAIL_FROM || 'onboarding@resend.dev';
+  const sender = process.env.EMAIL_FROM;
   
   const emailHtml = `
     <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; background: #f8fafc;">
@@ -77,23 +68,20 @@ const sendOTPEmail = async (email, otp) => {
         subject: 'WeGo - Password Reset OTP',
         html: emailHtml
       });
-      console.log(`[INFO] OTP sent to ${email} using ${sender}`);
       return { success: true };
     }
     
     if (process.env.NODE_ENV !== 'production') {
-      console.log(`[DEV MODE] OTP for ${email}: ${otp}`);
       return { success: true, devMode: true };
     }
     return { success: false, error: 'Email provider missing' };
   } catch (error) {
-    console.error(`[ERROR] Send OTP failed:`, error.message);
     return { success: false, error: error.message };
   }
 };
 
 const sendResetEmail = async (email, token) => {
-  const sender = process.env.EMAIL_FROM || 'onboarding@resend.dev';
+  const sender = process.env.EMAIL_FROM;
   const frontendUrl = process.env.CLIENT_URL || 'http://localhost:3000';
   const cleanUrl = frontendUrl.replace(/\/$/, '');
   const resetLink = `${cleanUrl}/auth/reset-password-confirm?token=${token}`;
@@ -120,17 +108,14 @@ const sendResetEmail = async (email, token) => {
         subject: 'WeGo - Password Reset Link',
         html: emailHtml
       });
-      console.log(`[INFO] Reset link sent to ${email} using ${sender}`);
       return { success: true };
     }
     
     if (process.env.NODE_ENV !== 'production') {
-      console.log(`[DEV MODE] Link for ${email}: ${resetLink}`);
       return { success: true, devMode: true };
     }
     return { success: false };
   } catch (error) {
-    console.error('[ERROR] Send Link failed:', error.message);
     return { success: false };
   }
 };
@@ -154,7 +139,6 @@ router.post('/register', async (req, res) => {
     const token = jwt.sign({ _id: user._id.toString() }, process.env.JWT_SECRET);
     res.status(201).json({ user, token });
   } catch (error) {
-    console.error('[ERROR] Register:', error.message);
     res.status(400).json({ error: error.message });
   }
 });
@@ -190,7 +174,6 @@ router.post('/login', async (req, res) => {
     const token = jwt.sign({ _id: user._id.toString() }, process.env.JWT_SECRET);
     res.json({ user, token });
   } catch (error) {
-    console.error('[ERROR] Login:', error.message);
     res.status(400).json({ error: error.message });
   }
 });
@@ -230,7 +213,6 @@ router.post('/forgot-password', async (req, res) => {
     
     if (!result.success && !result.devMode) {
       otpStore.delete(email.toLowerCase());
-      console.error(`[ERROR] Failed to send OTP to ${email}: ${result.error}`);
     }
     
     res.json({ 
@@ -238,7 +220,6 @@ router.post('/forgot-password', async (req, res) => {
       devOTP: result.devMode ? otp : undefined
     });
   } catch (error) {
-    console.error('[ERROR] Forgot Password:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -273,7 +254,6 @@ router.post('/reset-password', async (req, res) => {
 
     res.json({ message: 'Password reset successfully' });
   } catch (error) {
-    console.error('[ERROR] Reset Password:', error);
     res.status(500).json({ error: 'Failed to reset password' });
   }
 });
@@ -287,7 +267,6 @@ router.post('/forgot-password-link', async (req, res) => {
     if (!user) return res.json({ message: 'If the email exists, a reset link has been sent' });
 
     if (!process.env.JWT_SECRET) {
-      console.error('[ERROR] JWT_SECRET missing');
       return res.status(500).json({ error: 'Server config error' });
     }
 
@@ -299,7 +278,6 @@ router.post('/forgot-password-link', async (req, res) => {
       devLinkToken: result.devMode ? token : undefined 
     });
   } catch (error) {
-    console.error('[ERROR] Forgot Password Link:', error);
     res.status(500).json({ error: 'Failed to process request' });
   }
 });
@@ -322,7 +300,6 @@ router.post('/verify-reset-token', async (req, res) => {
 
     res.json({ email: user.email });
   } catch (error) {
-    console.error('[ERROR] Verify Token:', error);
     res.status(500).json({ message: 'Failed to verify token' });
   }
 });
@@ -349,7 +326,6 @@ router.post('/reset-password-confirm', async (req, res) => {
 
     res.json({ message: 'Password reset successfully' });
   } catch (error) {
-    console.error('[ERROR] Reset Confirm:', error);
     res.status(500).json({ message: 'Failed to reset password' });
   }
 });

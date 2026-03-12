@@ -75,7 +75,7 @@ app.use((err, req, res, next) => {
   res.status(500).json({ error: 'Something went wrong!' });
 });
 
-startCleanupCron();
+startCleanupCron(io);
 
 httpServer.listen(port, '0.0.0.0', () => {
   console.log(`🚀 Server is running on port ${port}`);
