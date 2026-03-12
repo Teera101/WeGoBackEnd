@@ -8,8 +8,10 @@ import Group from '../models/group.js';
 import Review from '../models/review.js';
 import Notification from '../models/notification.js';
 import Profile from '../models/profile.js';
+import User from '../models/user.js';
 import auth from '../middleware/auth.js';
 import { uploadBuffer } from '../lib/cloudinary.js';
+import nodemailer from 'nodemailer';
 
 const router = express.Router();
 
@@ -32,6 +34,33 @@ const upload = multer({
     }
   }
 });
+
+const sendNotificationEmail = async (toEmail, subject, htmlContent) => {
+  try {
+    const host = process.env.EMAIL_HOST;
+    const port = parseInt(process.env.EMAIL_PORT || '587');
+    const user = process.env.EMAIL_USER;
+    const pass = process.env.EMAIL_PASSWORD;
+    const sender = process.env.EMAIL_FROM || user;
+
+    if (!user || !pass) return;
+
+    const transporter = nodemailer.createTransport({
+      host: host,
+      port: port,
+      secure: port === 465,
+      auth: { user, pass }
+    });
+
+    await transporter.sendMail({
+      from: `"WeGo Notification" <${sender}>`,
+      to: toEmail,
+      subject: subject,
+      html: htmlContent
+    });
+  } catch (err) {
+  }
+};
 
 router.post('/upload-cover', auth, upload.single('cover'), async (req, res) => {
   try {
@@ -253,6 +282,21 @@ router.post('/', auth, async (req, res) => {
           if (io) {
             io.to(profile.userId.toString()).emit('notification:new', notification);
           }
+
+          const targetUser = await User.findById(profile.userId);
+          if (targetUser && targetUser.email) {
+            const emailHtml = `
+              <div style="font-family: Arial, sans-serif; padding: 20px; background-color: #f8fafc; border-radius: 12px; max-width: 600px; margin: 0 auto;">
+                <h2 style="color: #d97706; text-align: center;">✨ กิจกรรมใหม่ที่ตรงใจคุณ!</h2>
+                <div style="background: white; padding: 24px; border-radius: 8px; margin-top: 20px;">
+                  <p style="color: #334155; font-size: 16px;">สวัสดีครับ,</p>
+                  <p style="color: #334155; font-size: 16px;">มีกิจกรรมใหม่ชื่อ <strong>"${event.title}"</strong> เพิ่งเปิดรับสมัครบน WeGo และมีแท็กตรงกับความสนใจของคุณพอดีเลย!</p>
+                  <p style="color: #334155; font-size: 16px;">รีบเข้าไปดูก่อนที่ที่นั่งจะเต็มนะครับ 🚀</p>
+                </div>
+              </div>
+            `;
+            await sendNotificationEmail(targetUser.email, `WeGo - แนะนำกิจกรรมใหม่: ${event.title}`, emailHtml);
+          }
         }
       }
     } catch (notiErr) {
@@ -351,6 +395,21 @@ router.post('/:id/join', auth, async (req, res) => {
       const io = req.app.get('io');
       if (io) {
         io.to(event.createdBy.toString()).emit('notification:new', notification);
+      }
+
+      const creatorUser = await User.findById(event.createdBy);
+      if (creatorUser && creatorUser.email) {
+        const emailHtml = `
+          <div style="font-family: Arial, sans-serif; padding: 20px; background-color: #f8fafc; border-radius: 12px; max-width: 600px; margin: 0 auto;">
+            <h2 style="color: #2563eb; text-align: center;">🎉 มีผู้เข้าร่วมกิจกรรมใหม่!</h2>
+            <div style="background: white; padding: 24px; border-radius: 8px; margin-top: 20px;">
+              <p style="color: #334155; font-size: 16px;">สวัสดีครับ,</p>
+              <p style="color: #334155; font-size: 16px;">มีผู้ใช้งานเพิ่งกดเข้าร่วมกิจกรรม <strong>"${event.title}"</strong> ของคุณ</p>
+              <p style="color: #334155; font-size: 16px;">เข้าไปเช็ครายละเอียดและทักทายสมาชิกใหม่ได้ที่ระบบ WeGo เลยครับ!</p>
+            </div>
+          </div>
+        `;
+        await sendNotificationEmail(creatorUser.email, `WeGo - แจ้งเตือน: มีผู้เข้าร่วมกิจกรรม "${event.title}"`, emailHtml);
       }
     }
 
