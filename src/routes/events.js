@@ -262,7 +262,41 @@ router.post('/', auth, async (req, res) => {
     }
 
     try {
-      if (event.tags && event.tags.length > 0) {
+      if (event.isImportant) {
+        const allProfiles = await Profile.find({ userId: { $ne: userId } });
+
+        for (const profile of allProfiles) {
+          const notification = new Notification({
+            recipient: profile.userId,
+            sender: userId,
+            type: 'announcement',
+            title: '📢 กิจกรรมพิเศษจากแอดมิน!',
+            message: `มีกิจกรรมไฮไลท์ "${event.title}" เข้ามาใหม่ ลองเข้าไปดูรายละเอียดสิ!`,
+            relatedId: event._id
+          });
+          await notification.save();
+
+          if (io) {
+            io.to(profile.userId.toString()).emit('notification:new', notification);
+          }
+
+          const targetUser = await User.findById(profile.userId);
+          if (targetUser && targetUser.email) {
+            const emailHtml = `
+              <div style="font-family: Arial, sans-serif; padding: 20px; background-color: #f8fafc; border-radius: 12px; max-width: 600px; margin: 0 auto;">
+                <h2 style="color: #ea580c; text-align: center;">📢 ประกาศกิจกรรมพิเศษจากแอดมิน!</h2>
+                <div style="background: white; padding: 24px; border-radius: 8px; margin-top: 20px; border: 2px solid #fef3c7;">
+                  <p style="color: #334155; font-size: 16px;">สวัสดีครับ,</p>
+                  <p style="color: #334155; font-size: 16px;">ระบบได้เปิดตัวกิจกรรมพิเศษ <strong>"${event.title}"</strong> 🌟</p>
+                  <p style="color: #334155; font-size: 16px;">รีบเข้าไปดูรายละเอียดและเข้าร่วมกิจกรรมไฮไลท์นี้บน WeGo ได้เลยครับ!</p>
+                </div>
+              </div>
+            `;
+            await sendNotificationEmail(targetUser.email, `WeGo - 🌟 กิจกรรมพิเศษจากแอดมิน: ${event.title}`, emailHtml);
+          }
+        }
+      } 
+      else if (event.tags && event.tags.length > 0) {
         const matchedProfiles = await Profile.find({
           userId: { $ne: userId },
           tags: { $in: event.tags }
