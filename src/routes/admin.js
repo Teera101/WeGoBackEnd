@@ -6,9 +6,38 @@ import Event from '../models/event.js';
 import Chat from '../models/chat.js';
 import Profile from '../models/profile.js';
 import Report from '../models/report.js';
+import Notification from '../models/notification.js';
 import auth from '../middleware/auth.js';
+import nodemailer from 'nodemailer';
 
 const router = express.Router();
+
+const sendNotificationEmail = async (toEmail, subject, htmlContent) => {
+  try {
+    const host = process.env.EMAIL_HOST;
+    const port = parseInt(process.env.EMAIL_PORT || '587');
+    const user = process.env.EMAIL_USER;
+    const pass = process.env.EMAIL_PASSWORD;
+    const sender = process.env.EMAIL_FROM || user;
+
+    if (!user || !pass) return;
+
+    const transporter = nodemailer.createTransport({
+      host: host,
+      port: port,
+      secure: port === 465,
+      auth: { user, pass }
+    });
+
+    await transporter.sendMail({
+      from: `"WeGo Notification" <${sender}>`,
+      to: toEmail,
+      subject: subject,
+      html: htmlContent
+    });
+  } catch (err) {
+  }
+};
 
 const isAdmin = (req, res, next) => {
   if (req.user && req.user.role === 'admin') {
@@ -213,6 +242,49 @@ router.put('/activities/:id/important', async (req, res) => {
     activity.isImportant = !activity.isImportant;
     await activity.save();
     
+    if (activity.isImportant) {
+      (async () => {
+        try {
+          const io = req.app.get('io');
+          const allProfiles = await Profile.find();
+
+          for (const profile of allProfiles) {
+            if (profile.userId.toString() === req.user._id.toString()) continue;
+
+            const notification = new Notification({
+              recipient: profile.userId,
+              sender: req.user._id,
+              type: 'announcement',
+              title: '📢 กิจกรรมพิเศษจากแอดมิน!',
+              message: `มีกิจกรรมไฮไลท์ "${activity.title}" เข้ามาใหม่ ลองเข้าไปดูรายละเอียดสิ!`,
+              relatedId: activity._id
+            });
+            await notification.save();
+
+            if (io) {
+              io.to(profile.userId.toString()).emit('notification:new', notification);
+            }
+
+            const targetUser = await User.findById(profile.userId);
+            if (targetUser && targetUser.email) {
+              const emailHtml = `
+                <div style="font-family: Arial, sans-serif; padding: 20px; background-color: #f8fafc; border-radius: 12px; max-width: 600px; margin: 0 auto;">
+                  <h2 style="color: #ea580c; text-align: center;">📢 ประกาศกิจกรรมพิเศษจากแอดมิน!</h2>
+                  <div style="background: white; padding: 24px; border-radius: 8px; margin-top: 20px; border: 2px solid #fef3c7;">
+                    <p style="color: #334155; font-size: 16px;">สวัสดีครับ,</p>
+                    <p style="color: #334155; font-size: 16px;">ระบบได้คัดเลือกกิจกรรม <strong>"${activity.title}"</strong> ให้เป็นกิจกรรมไฮไลท์ประจำแพลตฟอร์ม 🌟</p>
+                    <p style="color: #334155; font-size: 16px;">รีบเข้าไปดูรายละเอียดและเข้าร่วมกิจกรรมนี้บน WeGo ได้เลยครับ!</p>
+                  </div>
+                </div>
+              `;
+              await sendNotificationEmail(targetUser.email, `WeGo - 🌟 กิจกรรมไฮไลท์จากแอดมิน: ${activity.title}`, emailHtml);
+            }
+          }
+        } catch (err) {
+        }
+      })();
+    }
+
     res.status(200).json({ message: 'Status updated', isImportant: activity.isImportant });
   } catch (error) {
     res.status(500).json({ message: 'Server error', error: error.message });
