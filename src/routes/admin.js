@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import express from 'express';
 import User from '../models/user.js';
 import Activity from '../models/activity.js';
@@ -35,8 +36,7 @@ const sendNotificationEmail = async (toEmail, subject, htmlContent) => {
       subject: subject,
       html: htmlContent
     });
-  } catch (err) {
-  }
+  } catch (err) {}
 };
 
 const isAdmin = (req, res, next) => {
@@ -221,8 +221,7 @@ router.get('/activities', async (req, res) => {
           return a;
         });
       }
-    } catch (pfErr) {
-    }
+    } catch (pfErr) {}
 
     res.status(200).json({
       activities
@@ -242,29 +241,19 @@ router.put('/activities/:id/important', async (req, res) => {
     activity.isImportant = !activity.isImportant;
     await activity.save();
     
+    const io = req.app.get('io');
+    if (io) {
+      io.emit('activity:update', activity);
+    }
+    
     if (activity.isImportant) {
       (async () => {
         try {
-          const io = req.app.get('io');
           const allUsers = await User.find({ _id: { $ne: req.user._id } });
 
           for (const targetUser of allUsers) {
-            try {
-              const notification = new Notification({
-                recipient: targetUser._id,
-                sender: req.user._id,
-                type: 'recommendation',
-                title: '📢 กิจกรรมพิเศษจากแอดมิน!',
-                message: `มีกิจกรรมไฮไลท์ "${activity.title}" เข้ามาใหม่ ลองเข้าไปดูรายละเอียดสิ!`,
-                relatedId: activity._id
-              });
-              await notification.save();
-
-              if (io) {
-                io.to(targetUser._id.toString()).emit('notification:new', notification);
-              }
-
-              if (targetUser.email) {
+            if (targetUser.email) {
+              try {
                 const emailHtml = `
                   <div style="font-family: Arial, sans-serif; padding: 20px; background-color: #f8fafc; border-radius: 12px; max-width: 600px; margin: 0 auto;">
                     <h2 style="color: #ea580c; text-align: center;">📢 ประกาศกิจกรรมพิเศษจากแอดมิน!</h2>
@@ -275,13 +264,27 @@ router.put('/activities/:id/important', async (req, res) => {
                     </div>
                   </div>
                 `;
-                await sendNotificationEmail(targetUser.email, `WeGo - 🌟 กิจกรรมไฮไลท์จากแอดมิน: ${activity.title}`, emailHtml);
-              }
-            } catch (innerErr) {
+                await sendNotificationEmail(targetUser.email, `WeGo - 🌟 กิจกรรมไฮไลท์: ${activity.title}`, emailHtml);
+              } catch (e1) {}
             }
+
+            try {
+              const notification = new Notification({
+                recipient: targetUser._id,
+                sender: req.user._id,
+                type: 'activity_join', 
+                title: '📢 กิจกรรมพิเศษจากแอดมิน!',
+                message: `มีกิจกรรมไฮไลท์ "${activity.title}" เข้ามาใหม่ ลองเข้าไปดูรายละเอียดสิ!`,
+                relatedId: activity._id
+              });
+              await notification.save();
+
+              if (io) {
+                io.to(targetUser._id.toString()).emit('notification:new', notification);
+              }
+            } catch (e2) {}
           }
-        } catch (err) {
-        }
+        } catch (err) {}
       })();
     }
 
