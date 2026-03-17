@@ -1,9 +1,9 @@
 import express from 'express';
 import auth from '../middleware/auth.js';
 import * as groupController from '../controllers/groupController.js';
-import Review from '../models/review.js';
-import Report from '../models/report.js';
-import Group from '../models/group.js';
+import Review from '../models/review.js'; 
+import Report from '../models/report.js'; 
+import Group from '../models/group.js';   
 import Activity from '../models/activity.js';
 import Chat from '../models/chat.js';
 
@@ -92,7 +92,12 @@ router.post('/:id/report', auth, async (req, res) => {
     const report = new Report({ targetType: 'group', targetId: req.params.id, reportedBy: req.user._id, ...req.body });
     await report.save();
     res.status(201).json(report);
-  } catch (error) { res.status(400).json({ error: error.message }); }
+  } catch (error) { 
+    if (error.code === 11000) {
+      return res.status(400).json({ error: 'คุณได้รายงานเนื้อหานี้ไปแล้ว' });
+    }
+    res.status(400).json({ error: error.message }); 
+  }
 });
 
 export default router;

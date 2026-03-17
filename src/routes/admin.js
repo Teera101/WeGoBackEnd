@@ -1,4 +1,3 @@
-import 'dotenv/config';
 import express from 'express';
 import User from '../models/user.js';
 import Activity from '../models/activity.js';
@@ -298,14 +297,21 @@ router.delete('/activities/:id', async (req, res) => {
   try {
     const { id } = req.params;
 
-    const activity = await Activity.findByIdAndDelete(id);
+    const activity = await Activity.findById(id);
+    if (!activity) return res.status(404).json({ message: 'Activity not found' });
+    
+    // ลบ Chat และ Group ที่เกี่ยวข้องให้เกลี้ยง
+    if (activity.chat) await Chat.findByIdAndDelete(activity.chat);
+    await Group.deleteMany({ relatedActivity: id });
+    await Activity.findByIdAndDelete(id);
 
-    if (!activity) {
-      return res.status(404).json({ message: 'Activity not found' });
+    const io = req.app.get('io');
+    if (io) {
+      io.emit('activity:delete', { _id: id });
     }
 
     res.status(200).json({
-      message: 'Activity deleted successfully'
+      message: 'Activity and related content deleted successfully'
     });
   } catch (error) {
     res.status(500).json({ message: 'Server error', error: error.message });
@@ -363,14 +369,22 @@ router.delete('/groups/:id', async (req, res) => {
   try {
     const { id } = req.params;
 
-    const group = await Group.findByIdAndDelete(id);
+    const group = await Group.findById(id);
+    if (!group) return res.status(404).json({ message: 'Group not found' });
 
-    if (!group) {
-      return res.status(404).json({ message: 'Group not found' });
+    // ลบ Activity และ Chat ที่เกี่ยวข้องให้เกลี้ยง
+    if (group.relatedActivity) {
+      const activity = await Activity.findById(group.relatedActivity);
+      if (activity && activity.chat) await Chat.findByIdAndDelete(activity.chat);
+      await Activity.findByIdAndDelete(group.relatedActivity);
+      
+      const io = req.app.get('io');
+      if (io) io.emit('activity:delete', { _id: group.relatedActivity });
     }
+    await Group.findByIdAndDelete(id);
 
     res.status(200).json({
-      message: 'Group deleted successfully'
+      message: 'Group and related content deleted successfully'
     });
   } catch (error) {
     res.status(500).json({ message: 'Server error', error: error.message });
@@ -644,15 +658,32 @@ router.post('/reports/:id/action', async (req, res) => {
     }
 
     let result = {};
+    const io = req.app.get('io');
 
     switch (action) {
       case 'delete':
+        // แก้ไขให้ลบแบบถอนรากถอนโคน ทั้ง Group, Activity, และ Chat
         if (report.targetType === 'group') {
-          await Group.findByIdAndDelete(report.targetId);
-          result.message = 'Group deleted successfully';
+          const group = await Group.findById(report.targetId);
+          if (group) {
+            if (group.relatedActivity) {
+              const activity = await Activity.findById(group.relatedActivity);
+              if (activity && activity.chat) await Chat.findByIdAndDelete(activity.chat);
+              await Activity.findByIdAndDelete(group.relatedActivity);
+              if (io) io.emit('activity:delete', { _id: group.relatedActivity });
+            }
+            await Group.findByIdAndDelete(report.targetId);
+          }
+          result.message = 'Group and related content deleted successfully';
         } else if (report.targetType === 'activity') {
-          await Activity.findByIdAndDelete(report.targetId);
-          result.message = 'Activity deleted successfully';
+          const activity = await Activity.findById(report.targetId);
+          if (activity) {
+            if (activity.chat) await Chat.findByIdAndDelete(activity.chat);
+            await Group.deleteMany({ relatedActivity: activity._id });
+            await Activity.findByIdAndDelete(report.targetId);
+            if (io) io.emit('activity:delete', { _id: activity._id });
+          }
+          result.message = 'Activity and related content deleted successfully';
         }
         
         report.status = 'resolved';
