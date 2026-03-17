@@ -163,10 +163,8 @@ router.put('/users/:id/role', async (req, res) => {
 router.delete('/users/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    const user = await User.findByIdAndDelete(id);
-    if (!user) {
-      return res.status(404).json({ message: 'User not found' });
-    }
+    const user = await User.findByIdAndDelete(id).catch(() => null);
+    if (!user) return res.status(404).json({ message: 'User not found' });
     res.status(200).json({ message: 'User deleted successfully' });
   } catch (error) {
     res.status(500).json({ message: 'Server error', error: error.message });
@@ -286,19 +284,17 @@ router.put('/activities/:id/important', async (req, res) => {
 router.delete('/activities/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    const activity = await Activity.findById(id);
+    const actId = id.toString().trim();
     
-    if (!activity) return res.status(404).json({ message: 'Activity not found' });
+    const activity = await Activity.findById(actId).catch(() => null);
+    if (activity && activity.chat) await Chat.findByIdAndDelete(activity.chat).catch(() => null);
     
-    if (activity.chat) await Chat.findByIdAndDelete(activity.chat);
-    await Group.deleteMany({ relatedActivity: id });
-    await Activity.findByIdAndDelete(id);
-    await Report.deleteMany({ targetId: id });
+    await Group.deleteMany({ relatedActivity: actId }).catch(() => null);
+    await Activity.findByIdAndDelete(actId).catch(() => null);
+    await Report.deleteMany({ targetId: actId }).catch(() => null);
 
     const io = req.app.get('io');
-    if (io) {
-      io.emit('activity:delete', { _id: id });
-    }
+    if (io) io.emit('activity:delete', { _id: actId });
 
     res.status(200).json({ message: 'Activity and related content deleted successfully' });
   } catch (error) {
@@ -349,30 +345,27 @@ router.get('/groups', async (req, res) => {
 router.delete('/groups/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    const group = await Group.findById(id);
-    if (!group) return res.status(404).json({ message: 'Group not found' });
-
+    const groupId = id.toString().trim();
+    const group = await Group.findById(groupId).catch(() => null);
+    
     let actId = null;
-    if (group.relatedActivity) {
-      actId = group.relatedActivity.toString();
+    if (group && group.relatedActivity) {
+      actId = group.relatedActivity.toString().trim();
     }
     
-    await Group.findByIdAndDelete(id);
+    await Group.findByIdAndDelete(groupId).catch(() => null);
+    await Report.deleteMany({ targetId: groupId }).catch(() => null);
 
     if (actId) {
-      const activity = await Activity.findById(actId);
-      if (activity) {
-        if (activity.chat) await Chat.findByIdAndDelete(activity.chat);
-        await Activity.findByIdAndDelete(actId);
-      }
-      await Group.deleteMany({ relatedActivity: actId });
-      await Report.deleteMany({ targetId: actId });
+      const activity = await Activity.findById(actId).catch(() => null);
+      if (activity && activity.chat) await Chat.findByIdAndDelete(activity.chat).catch(() => null);
+      await Activity.findByIdAndDelete(actId).catch(() => null);
+      await Group.deleteMany({ relatedActivity: actId }).catch(() => null);
+      await Report.deleteMany({ targetId: actId }).catch(() => null);
       
       const io = req.app.get('io');
       if (io) io.emit('activity:delete', { _id: actId });
     }
-
-    await Report.deleteMany({ targetId: id });
 
     res.status(200).json({ message: 'Group and related content deleted successfully' });
   } catch (error) {
@@ -418,10 +411,7 @@ router.get('/events', async (req, res) => {
 router.delete('/events/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    const event = await Event.findByIdAndDelete(id);
-    if (!event) {
-      return res.status(404).json({ message: 'Event not found' });
-    }
+    await Event.findByIdAndDelete(id).catch(() => null);
     res.status(200).json({ message: 'Event deleted successfully' });
   } catch (error) {
     res.status(500).json({ message: 'Server error', error: error.message });
@@ -476,19 +466,20 @@ router.get('/chats', async (req, res) => {
 router.delete('/chats/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    const chat = await Chat.findByIdAndDelete(id);
-    if (!chat) return res.status(404).json({ message: 'Chat not found' });
-
-    const activity = await Activity.findOne({ chat: id });
+    const chatId = id.toString().trim();
+    
+    const activity = await Activity.findOne({ chat: chatId }).catch(() => null);
     if (activity) {
-      await Group.deleteMany({ relatedActivity: activity._id.toString() });
-      await Activity.findByIdAndDelete(activity._id);
-      await Report.deleteMany({ targetId: activity._id });
+      const actId = activity._id.toString();
+      await Group.deleteMany({ relatedActivity: actId }).catch(() => null);
+      await Activity.findByIdAndDelete(actId).catch(() => null);
+      await Report.deleteMany({ targetId: actId }).catch(() => null);
       
       const io = req.app.get('io');
-      if (io) io.emit('activity:delete', { _id: activity._id });
+      if (io) io.emit('activity:delete', { _id: actId });
     }
-
+    
+    await Chat.findByIdAndDelete(chatId).catch(() => null);
     res.status(200).json({ message: 'Chat and related content deleted successfully' });
   } catch (error) {
     res.status(500).json({ message: 'Server error', error: error.message });
@@ -632,49 +623,53 @@ router.post('/reports/:id/action', async (req, res) => {
 
     switch (action) {
       case 'delete':
-        const tType = report.targetType?.toLowerCase();
-        const tId = report.targetId;
+        const tId = report.targetId?.toString().trim();
+        let actId = null;
+        let chatId = null;
 
-        if (tType === 'group') {
-          const group = await Group.findById(tId);
-          if (group) {
-            if (group.relatedActivity) {
-              const actId = group.relatedActivity.toString();
-              const act = await Activity.findById(actId);
-              if (act && act.chat) await Chat.findByIdAndDelete(act.chat);
-              await Activity.findByIdAndDelete(actId);
-              await Group.deleteMany({ relatedActivity: actId });
-              await Report.deleteMany({ targetId: actId });
-              if (io) io.emit('activity:delete', { _id: actId });
-            }
-            await Group.findByIdAndDelete(tId);
-          }
-        } else if (tType === 'activity') {
-          const act = await Activity.findById(tId);
-          if (act) {
-            if (act.chat) await Chat.findByIdAndDelete(act.chat);
-            await Activity.findByIdAndDelete(tId);
-            await Group.deleteMany({ relatedActivity: tId });
-            if (io) io.emit('activity:delete', { _id: tId });
-          }
+        const group = await Group.findById(tId).catch(() => null);
+        if (group && group.relatedActivity) {
+          actId = group.relatedActivity.toString().trim();
         }
 
-        await Report.deleteMany({ targetId: tId });
-        await Report.findByIdAndDelete(report._id);
+        const activity = await Activity.findById(tId).catch(() => null);
+        if (activity) {
+          actId = activity._id.toString().trim();
+        }
 
-        return res.status(200).json({
-          message: 'Content and related reports deleted successfully',
-          report: { ...report.toObject(), status: 'resolved', adminNotes: `Content deleted. Reason: ${reason || 'Violated community guidelines'}` }
-        });
+        if (!actId && report.targetType === 'activity') {
+          actId = tId;
+        }
+
+        if (actId) {
+          const act = await Activity.findById(actId).catch(() => null);
+          if (act && act.chat) chatId = act.chat.toString().trim();
+
+          if (chatId) await Chat.findByIdAndDelete(chatId).catch(() => null);
+          await Activity.findByIdAndDelete(actId).catch(() => null);
+          await Group.deleteMany({ relatedActivity: actId }).catch(() => null);
+          await Report.deleteMany({ targetId: actId, _id: { $ne: report._id } }).catch(() => null);
+
+          if (io) io.emit('activity:delete', { _id: actId });
+        }
+
+        await Group.findByIdAndDelete(tId).catch(() => null);
+        await Activity.findByIdAndDelete(tId).catch(() => null);
+        await Report.deleteMany({ targetId: tId, _id: { $ne: report._id } }).catch(() => null);
+
+        report.status = 'resolved';
+        report.adminNotes = `Content deleted. Reason: ${reason || 'Violated community guidelines'}`;
+        result.message = 'Content and all related data deleted successfully';
+        break;
 
       case 'block_user':
         let ownerId;
         if (report.targetType === 'group') {
-          const group = await Group.findById(report.targetId);
-          ownerId = group?.createdBy;
+          const groupTarget = await Group.findById(report.targetId);
+          ownerId = groupTarget?.createdBy;
         } else if (report.targetType === 'activity') {
-          const activity = await Activity.findById(report.targetId);
-          ownerId = activity?.createdBy;
+          const activityTarget = await Activity.findById(report.targetId);
+          ownerId = activityTarget?.createdBy;
         } else if (report.targetType === 'user') {
           ownerId = report.targetId;
         }
