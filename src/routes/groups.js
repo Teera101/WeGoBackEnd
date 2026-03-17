@@ -1,9 +1,9 @@
 import express from 'express';
 import auth from '../middleware/auth.js';
 import * as groupController from '../controllers/groupController.js';
-import Review from '../models/review.js'; 
-import Report from '../models/report.js'; 
-import Group from '../models/group.js';   
+import Review from '../models/review.js';
+import Report from '../models/report.js';
+import Group from '../models/group.js';
 import Activity from '../models/activity.js';
 import Chat from '../models/chat.js';
 
@@ -13,7 +13,47 @@ router.post('/', auth, groupController.createGroup);
 router.get('/', groupController.getGroups);
 router.get('/:id', groupController.getGroupById);
 router.put('/:id', auth, groupController.updateGroup);
-router.delete('/:id', auth, groupController.deleteGroup);
+
+router.delete('/:id', auth, async (req, res) => {
+  try {
+    const group = await Group.findById(req.params.id);
+    if (!group) return res.status(404).json({ error: 'Group not found' });
+
+    const isOwner = group.createdBy.toString() === req.user._id.toString();
+    const member = group.members.find(m => m.userId.toString() === req.user._id.toString());
+    const isMemberOwner = member && member.role === 'owner';
+
+    if (!isOwner && !isMemberOwner && req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'No permission to delete group' });
+    }
+
+    let actId = null;
+    if (group.relatedActivity) {
+      actId = group.relatedActivity.toString();
+    }
+
+    await Group.findByIdAndDelete(req.params.id);
+
+    if (actId) {
+      const activity = await Activity.findById(actId);
+      if (activity) {
+        if (activity.chat) await Chat.findByIdAndDelete(activity.chat);
+        await Activity.findByIdAndDelete(actId);
+      }
+      await Group.deleteMany({ relatedActivity: actId });
+      await Report.deleteMany({ targetId: actId });
+      
+      const io = req.app.get('io');
+      if (io) io.emit('activity:delete', { _id: actId });
+    }
+
+    await Report.deleteMany({ targetId: req.params.id });
+
+    res.json({ message: 'Group deleted successfully' });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
 
 router.post('/:id/join', auth, groupController.joinGroup);
 router.post('/:id/leave', auth, groupController.leaveGroup);
@@ -43,7 +83,7 @@ router.delete('/:groupId/members/:memberId', auth, async (req, res) => {
           if (chat) {
             chat.participants = chat.participants.filter(p => p.user && p.user.toString() !== memberId);
             await chat.save();
-            
+
             const io = req.app.get('io');
             if (io) {
               io.to(`chat:${chat._id}`).emit('participant:kicked', { userId: memberId, chatId: chat._id });
@@ -92,11 +132,11 @@ router.post('/:id/report', auth, async (req, res) => {
     const report = new Report({ targetType: 'group', targetId: req.params.id, reportedBy: req.user._id, ...req.body });
     await report.save();
     res.status(201).json(report);
-  } catch (error) { 
+  } catch (error) {
     if (error.code === 11000) {
-      return res.status(400).json({ error: 'คุณได้รายงานเนื้อหานี้ไปแล้ว' });
+      return res.status(400).json({ message: 'คุณได้รายงานกลุ่มนี้ไปแล้ว', error: 'คุณได้รายงานกลุ่มนี้ไปแล้ว' });
     }
-    res.status(400).json({ error: error.message }); 
+    res.status(400).json({ message: 'เกิดข้อผิดพลาดในการรายงาน', error: error.message });
   }
 });
 
