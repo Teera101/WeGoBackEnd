@@ -163,16 +163,11 @@ router.put('/users/:id/role', async (req, res) => {
 router.delete('/users/:id', async (req, res) => {
   try {
     const { id } = req.params;
-
     const user = await User.findByIdAndDelete(id);
-
     if (!user) {
       return res.status(404).json({ message: 'User not found' });
     }
-
-    res.status(200).json({
-      message: 'User deleted successfully'
-    });
+    res.status(200).json({ message: 'User deleted successfully' });
   } catch (error) {
     res.status(500).json({ message: 'Server error', error: error.message });
   }
@@ -185,11 +180,7 @@ router.get('/activities/stats', async (req, res) => {
       .select('title category status createdAt')
       .sort({ createdAt: -1 })
       .limit(5);
-
-    res.status(200).json({
-      total,
-      recent
-    });
+    res.status(200).json({ total, recent });
   } catch (error) {
     res.status(500).json({ message: 'Server error', error: error.message });
   }
@@ -223,9 +214,7 @@ router.get('/activities', async (req, res) => {
       }
     } catch (pfErr) {}
 
-    res.status(200).json({
-      activities
-    });
+    res.status(200).json({ activities });
   } catch (error) {
     res.status(500).json({ message: 'Server error', error: error.message });
   }
@@ -324,11 +313,7 @@ router.get('/groups/stats', async (req, res) => {
       .select('name category members createdAt')
       .sort({ createdAt: -1 })
       .limit(5);
-
-    res.status(200).json({
-      total,
-      recent
-    });
+    res.status(200).json({ total, recent });
   } catch (error) {
     res.status(500).json({ message: 'Server error', error: error.message });
   }
@@ -337,7 +322,6 @@ router.get('/groups/stats', async (req, res) => {
 router.get('/groups', async (req, res) => {
   try {
     const groupsCount = await Group.countDocuments();
-    
     if (groupsCount === 0) {
       return res.status(200).json({ groups: [] });
     }
@@ -356,9 +340,7 @@ router.get('/groups', async (req, res) => {
       .sort({ createdAt: -1 })
       .lean();
 
-    res.status(200).json({
-      groups
-    });
+    res.status(200).json({ groups });
   } catch (error) {
     res.status(500).json({ message: 'Server error', error: error.message });
   }
@@ -368,7 +350,6 @@ router.delete('/groups/:id', async (req, res) => {
   try {
     const { id } = req.params;
     const group = await Group.findById(id);
-    
     if (!group) return res.status(404).json({ message: 'Group not found' });
 
     let actId = null;
@@ -405,11 +386,7 @@ router.get('/events/stats', async (req, res) => {
       .select('title activityId date createdAt')
       .sort({ createdAt: -1 })
       .limit(5);
-
-    res.status(200).json({
-      total,
-      recent
-    });
+    res.status(200).json({ total, recent });
   } catch (error) {
     res.status(500).json({ message: 'Server error', error: error.message });
   }
@@ -418,7 +395,6 @@ router.get('/events/stats', async (req, res) => {
 router.get('/events', async (req, res) => {
   try {
     const eventsCount = await Event.countDocuments();
-    
     if (eventsCount === 0) {
       return res.status(200).json({ events: [] });
     }
@@ -432,9 +408,7 @@ router.get('/events', async (req, res) => {
       .sort({ createdAt: -1 })
       .lean();
 
-    res.status(200).json({
-      events
-    });
+    res.status(200).json({ events });
   } catch (error) {
     res.status(500).json({ message: 'Server error', error: error.message });
   }
@@ -443,16 +417,11 @@ router.get('/events', async (req, res) => {
 router.delete('/events/:id', async (req, res) => {
   try {
     const { id } = req.params;
-
     const event = await Event.findByIdAndDelete(id);
-
     if (!event) {
       return res.status(404).json({ message: 'Event not found' });
     }
-
-    res.status(200).json({
-      message: 'Event deleted successfully'
-    });
+    res.status(200).json({ message: 'Event deleted successfully' });
   } catch (error) {
     res.status(500).json({ message: 'Server error', error: error.message });
   }
@@ -465,11 +434,7 @@ router.get('/chats/stats', async (req, res) => {
       .select('type participants messages createdAt')
       .sort({ createdAt: -1 })
       .limit(5);
-
-    res.status(200).json({
-      total,
-      recent
-    });
+    res.status(200).json({ total, recent });
   } catch (error) {
     res.status(500).json({ message: 'Server error', error: error.message });
   }
@@ -478,7 +443,6 @@ router.get('/chats/stats', async (req, res) => {
 router.get('/chats', async (req, res) => {
   try {
     const chatsCount = await Chat.countDocuments();
-    
     if (chatsCount === 0) {
       return res.status(200).json({ chats: [] });
     }
@@ -502,9 +466,7 @@ router.get('/chats', async (req, res) => {
       .sort({ updatedAt: -1 })
       .lean();
 
-    res.status(200).json({
-      chats
-    });
+    res.status(200).json({ chats });
   } catch (error) {
     res.status(500).json({ message: 'Server error', error: error.message });
   }
@@ -513,7 +475,6 @@ router.get('/chats', async (req, res) => {
 router.delete('/chats/:id', async (req, res) => {
   try {
     const { id } = req.params;
-
     const chat = await Chat.findByIdAndDelete(id);
     if (!chat) return res.status(404).json({ message: 'Chat not found' });
 
@@ -587,9 +548,7 @@ router.get('/reports', async (req, res) => {
       .populate('reviewedBy', 'email username')
       .sort({ createdAt: -1 });
 
-    res.status(200).json({
-      reports
-    });
+    res.status(200).json({ reports });
   } catch (error) {
     res.status(500).json({ message: 'Server error', error: error.message });
   }
@@ -676,24 +635,21 @@ router.post('/reports/:id/action', async (req, res) => {
 
         if (tType === 'group') {
           const group = await Group.findById(tId);
-          if (group) {
-            if (group.relatedActivity) {
-              const actId = group.relatedActivity.toString();
-              const act = await Activity.findById(actId);
-              if (act && act.chat) await Chat.findByIdAndDelete(act.chat);
-              await Activity.findByIdAndDelete(actId);
-              await Group.deleteMany({ relatedActivity: actId });
-              if (io) io.emit('activity:delete', { _id: actId });
-            } else {
-              await Group.findByIdAndDelete(tId);
-            }
+          await Group.findByIdAndDelete(tId);
+          if (group && group.relatedActivity) {
+            const actId = group.relatedActivity.toString();
+            const act = await Activity.findById(actId);
+            if (act && act.chat) await Chat.findByIdAndDelete(act.chat);
+            await Activity.findByIdAndDelete(actId);
+            await Group.deleteMany({ relatedActivity: actId });
+            if (io) io.emit('activity:delete', { _id: actId });
           }
         } else if (tType === 'activity') {
           const act = await Activity.findById(tId);
+          await Activity.findByIdAndDelete(tId);
           if (act) {
             if (act.chat) await Chat.findByIdAndDelete(act.chat);
             await Group.deleteMany({ relatedActivity: tId });
-            await Activity.findByIdAndDelete(tId);
             if (io) io.emit('activity:delete', { _id: tId });
           }
         }
