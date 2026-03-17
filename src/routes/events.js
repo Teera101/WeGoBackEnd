@@ -224,10 +224,9 @@ router.get('/:id', async (req, res) => {
 router.post('/', auth, async (req, res) => {
   try {
     if (req.body.date) {
-      const eventDate = new Date(req.body.date);
-      const now = new Date();
-      now.setHours(0, 0, 0, 0);
-      if (eventDate < now) {
+      const eventDateStr = new Date(req.body.date).toLocaleDateString('en-CA', { timeZone: 'Asia/Bangkok' });
+      const nowDateStr = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Bangkok' });
+      if (eventDateStr < nowDateStr) {
         return res.status(400).json({ error: 'ไม่สามารถเลือกวันที่ในอดีตได้' });
       }
     }
@@ -354,10 +353,9 @@ router.post('/', auth, async (req, res) => {
 router.put('/:id', auth, async (req, res) => {
   try {
     if (req.body.date) {
-      const eventDate = new Date(req.body.date);
-      const now = new Date();
-      now.setHours(0, 0, 0, 0);
-      if (eventDate < now) {
+      const eventDateStr = new Date(req.body.date).toLocaleDateString('en-CA', { timeZone: 'Asia/Bangkok' });
+      const nowDateStr = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Bangkok' });
+      if (eventDateStr < nowDateStr) {
         return res.status(400).json({ error: 'ไม่สามารถเลือกวันที่ในอดีตได้' });
       }
     }
