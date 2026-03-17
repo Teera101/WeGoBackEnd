@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import express from 'express';
 import User from '../models/user.js';
 import Activity from '../models/activity.js';
@@ -300,7 +301,6 @@ router.delete('/activities/:id', async (req, res) => {
     const activity = await Activity.findById(id);
     if (!activity) return res.status(404).json({ message: 'Activity not found' });
     
-    // ลบ Chat และ Group ที่เกี่ยวข้องให้เกลี้ยง
     if (activity.chat) await Chat.findByIdAndDelete(activity.chat);
     await Group.deleteMany({ relatedActivity: id });
     await Activity.findByIdAndDelete(id);
@@ -372,14 +372,14 @@ router.delete('/groups/:id', async (req, res) => {
     const group = await Group.findById(id);
     if (!group) return res.status(404).json({ message: 'Group not found' });
 
-    // ลบ Activity และ Chat ที่เกี่ยวข้องให้เกลี้ยง
     if (group.relatedActivity) {
       const activity = await Activity.findById(group.relatedActivity);
-      if (activity && activity.chat) await Chat.findByIdAndDelete(activity.chat);
-      await Activity.findByIdAndDelete(group.relatedActivity);
-      
-      const io = req.app.get('io');
-      if (io) io.emit('activity:delete', { _id: group.relatedActivity });
+      if (activity) {
+        if (activity.chat) await Chat.findByIdAndDelete(activity.chat);
+        await Activity.findByIdAndDelete(group.relatedActivity);
+        const io = req.app.get('io');
+        if (io) io.emit('activity:delete', { _id: group.relatedActivity });
+      }
     }
     await Group.findByIdAndDelete(id);
 
@@ -507,14 +507,20 @@ router.delete('/chats/:id', async (req, res) => {
   try {
     const { id } = req.params;
 
-    const chat = await Chat.findByIdAndDelete(id);
+    const chat = await Chat.findById(id);
+    if (!chat) return res.status(404).json({ message: 'Chat not found' });
 
-    if (!chat) {
-      return res.status(404).json({ message: 'Chat not found' });
+    const activity = await Activity.findOne({ chat: id });
+    if (activity) {
+      await Group.deleteMany({ relatedActivity: activity._id });
+      await Activity.findByIdAndDelete(activity._id);
+      const io = req.app.get('io');
+      if (io) io.emit('activity:delete', { _id: activity._id });
     }
+    await Chat.findByIdAndDelete(id);
 
     res.status(200).json({
-      message: 'Chat deleted successfully'
+      message: 'Chat and related content deleted successfully'
     });
   } catch (error) {
     res.status(500).json({ message: 'Server error', error: error.message });
@@ -662,15 +668,16 @@ router.post('/reports/:id/action', async (req, res) => {
 
     switch (action) {
       case 'delete':
-        // แก้ไขให้ลบแบบถอนรากถอนโคน ทั้ง Group, Activity, และ Chat
         if (report.targetType === 'group') {
           const group = await Group.findById(report.targetId);
           if (group) {
             if (group.relatedActivity) {
               const activity = await Activity.findById(group.relatedActivity);
-              if (activity && activity.chat) await Chat.findByIdAndDelete(activity.chat);
-              await Activity.findByIdAndDelete(group.relatedActivity);
-              if (io) io.emit('activity:delete', { _id: group.relatedActivity });
+              if (activity) {
+                if (activity.chat) await Chat.findByIdAndDelete(activity.chat);
+                await Activity.findByIdAndDelete(activity._id);
+                if (io) io.emit('activity:delete', { _id: activity._id });
+              }
             }
             await Group.findByIdAndDelete(report.targetId);
           }
@@ -680,7 +687,7 @@ router.post('/reports/:id/action', async (req, res) => {
           if (activity) {
             if (activity.chat) await Chat.findByIdAndDelete(activity.chat);
             await Group.deleteMany({ relatedActivity: activity._id });
-            await Activity.findByIdAndDelete(report.targetId);
+            await Activity.findByIdAndDelete(activity._id);
             if (io) io.emit('activity:delete', { _id: activity._id });
           }
           result.message = 'Activity and related content deleted successfully';
