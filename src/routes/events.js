@@ -223,6 +223,15 @@ router.get('/:id', async (req, res) => {
 
 router.post('/', auth, async (req, res) => {
   try {
+    if (req.body.date) {
+      const eventDate = new Date(req.body.date);
+      const now = new Date();
+      now.setHours(0, 0, 0, 0);
+      if (eventDate < now) {
+        return res.status(400).json({ error: 'ไม่สามารถเลือกวันที่ในอดีตได้' });
+      }
+    }
+
     const userId = req.user._id;
     const eventData = {
       ...req.body,
@@ -344,6 +353,15 @@ router.post('/', auth, async (req, res) => {
 
 router.put('/:id', auth, async (req, res) => {
   try {
+    if (req.body.date) {
+      const eventDate = new Date(req.body.date);
+      const now = new Date();
+      now.setHours(0, 0, 0, 0);
+      if (eventDate < now) {
+        return res.status(400).json({ error: 'ไม่สามารถเลือกวันที่ในอดีตได้' });
+      }
+    }
+
     const event = await Activity.findOne({ _id: req.params.id, createdBy: req.user._id });
     if (!event) return res.status(404).json({ error: 'Event not found or access denied' });
     Object.assign(event, req.body);

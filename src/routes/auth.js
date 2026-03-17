@@ -123,7 +123,20 @@ const sendResetEmail = async (email, token) => {
 router.post('/register', async (req, res) => {
   try {
     const userData = { ...req.body };
-    if (userData.username) userData.username = userData.username.trim();
+    if (userData.username) {
+      userData.username = userData.username.trim();
+      const usernameRegex = /^[A-Za-z0-9!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]+$/;
+      if (!usernameRegex.test(userData.username)) {
+        return res.status(400).json({ error: 'ชื่อผู้ใช้ต้องเป็นภาษาอังกฤษ ตัวเลข และอักขระพิเศษเท่านั้น โดยห้ามเว้นวรรค' });
+      }
+    }
+    
+    if (userData.password) {
+      const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{8,}$/;
+      if (!passwordRegex.test(userData.password)) {
+        return res.status(400).json({ error: 'รหัสผ่านต้องมีอย่างน้อย 8 ตัวอักษร ประกอบด้วยพิมพ์เล็ก พิมพ์ใหญ่ ตัวเลข และอักขระพิเศษ' });
+      }
+    }
     
     const user = new User(userData);
     await user.save();
@@ -231,8 +244,10 @@ router.post('/reset-password', async (req, res) => {
     if (!email || !otp || !newPassword) {
       return res.status(400).json({ error: 'Missing required fields' });
     }
-    if (newPassword.length < 6) {
-      return res.status(400).json({ error: 'Password must be at least 6 characters' });
+    
+    const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{8,}$/;
+    if (!passwordRegex.test(newPassword)) {
+      return res.status(400).json({ error: 'รหัสผ่านต้องมีอย่างน้อย 8 ตัวอักษร ประกอบด้วยพิมพ์เล็ก พิมพ์ใหญ่ ตัวเลข และอักขระพิเศษ' });
     }
 
     const stored = otpStore.get(email.toLowerCase());
@@ -308,7 +323,11 @@ router.post('/reset-password-confirm', async (req, res) => {
   try {
     const { token, password } = req.body;
     if (!token || !password) return res.status(400).json({ message: 'Token and password required' });
-    if (password.length < 6) return res.status(400).json({ message: 'Password must be at least 6 chars' });
+    
+    const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{8,}$/;
+    if (!passwordRegex.test(password)) {
+      return res.status(400).json({ message: 'รหัสผ่านต้องมีอย่างน้อย 8 ตัวอักษร ประกอบด้วยพิมพ์เล็ก พิมพ์ใหญ่ ตัวเลข และอักขระพิเศษ' });
+    }
 
     let payload;
     try {
