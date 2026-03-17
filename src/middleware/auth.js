@@ -3,13 +3,12 @@ import User from '../models/user.js';
 
 const auth = async (req, res, next) => {
   try {
-    // Try to get token from Authorization header or cookies
     let token = req.header('Authorization')?.replace('Bearer ', '');
     if (!token && req.cookies?.token) {
       token = req.cookies.token;
     }
     
-    if (!token) {
+    if (!token || token === 'null' || token === 'undefined') {
       return res.status(401).json({ error: 'Please authenticate', message: 'No token provided' });
     }
 
@@ -32,7 +31,6 @@ const auth = async (req, res, next) => {
     req.user = user;
     next();
   } catch (error) {
-    console.error('Auth middleware error:', error.message);
     res.status(401).json({ error: 'Please authenticate', message: error.message });
   }
 };
