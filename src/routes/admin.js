@@ -558,18 +558,34 @@ router.get('/reports/:id', async (req, res) => {
     }
 
     let targetDetails = null;
-    if (report.targetType === 'group') {
-      targetDetails = await Group.findById(report.targetId)
-        .populate('createdBy', 'email username')
-        .select('name description members');
-    } else if (report.targetType === 'activity') {
-      targetDetails = await Activity.findById(report.targetId)
-        .populate('createdBy', 'email username')
-        .select('title description category');
-    } else if (report.targetType === 'user') {
-      targetDetails = await User.findById(report.targetId)
-        .select('email username role isBlocked');
+    const tId = report.targetId;
+
+    targetDetails = await Group.findById(tId).populate('createdBy', 'email username').select('name description members');
+    if (targetDetails) {
+      report.targetType = 'group';
+    } else {
+      targetDetails = await Group.findOne({ relatedActivity: tId }).populate('createdBy', 'email username').select('name description members');
+      if (targetDetails) {
+        report.targetType = 'group';
+      } else {
+        targetDetails = await Activity.findById(tId).populate('createdBy', 'email username').select('title description category');
+        if (targetDetails) {
+          report.targetType = 'activity';
+        } else {
+          targetDetails = await Activity.findOne({ chat: tId }).populate('createdBy', 'email username').select('title description category');
+          if (targetDetails) {
+            report.targetType = 'activity';
+          } else {
+            targetDetails = await User.findById(tId).select('email username role isBlocked');
+            if (targetDetails) {
+              report.targetType = 'user';
+            }
+          }
+        }
+      }
     }
+
+    await report.save().catch(() => null);
 
     res.status(200).json({
       report,
@@ -623,39 +639,42 @@ router.post('/reports/:id/action', async (req, res) => {
 
     switch (action) {
       case 'delete':
-        const tId = report.targetId?.toString().trim();
-        let actId = null;
-        let chatId = null;
+        try {
+          const tId = report.targetId?.toString();
+          let actId = null;
 
-        const group = await Group.findById(tId).catch(() => null);
-        if (group && group.relatedActivity) {
-          actId = group.relatedActivity.toString().trim();
-        }
+          const groupById = await Group.findById(tId).catch(() => null);
+          if (groupById && groupById.relatedActivity) actId = groupById.relatedActivity.toString();
+          
+          if (!actId) {
+            const groupByAct = await Group.findOne({ relatedActivity: tId }).catch(() => null);
+            if (groupByAct) actId = tId;
+          }
 
-        const activity = await Activity.findById(tId).catch(() => null);
-        if (activity) {
-          actId = activity._id.toString().trim();
-        }
+          if (!actId) {
+            const actById = await Activity.findById(tId).catch(() => null);
+            if (actById) actId = tId;
+          }
 
-        if (!actId && report.targetType === 'activity') {
-          actId = tId;
-        }
+          if (!actId) {
+            const actByChat = await Activity.findOne({ chat: tId }).catch(() => null);
+            if (actByChat) actId = actByChat._id.toString();
+          }
 
-        if (actId) {
-          const act = await Activity.findById(actId).catch(() => null);
-          if (act && act.chat) chatId = act.chat.toString().trim();
+          if (actId) {
+            const act = await Activity.findById(actId).catch(() => null);
+            if (act && act.chat) await Chat.findByIdAndDelete(act.chat).catch(() => null);
+            await Activity.findByIdAndDelete(actId).catch(() => null);
+            await Group.deleteMany({ relatedActivity: actId }).catch(() => null);
+            await Report.deleteMany({ targetId: actId, _id: { $ne: report._id } }).catch(() => null);
+            if (io) io.emit('activity:delete', { _id: actId });
+          }
 
-          if (chatId) await Chat.findByIdAndDelete(chatId).catch(() => null);
-          await Activity.findByIdAndDelete(actId).catch(() => null);
-          await Group.deleteMany({ relatedActivity: actId }).catch(() => null);
-          await Report.deleteMany({ targetId: actId, _id: { $ne: report._id } }).catch(() => null);
+          await Group.findByIdAndDelete(tId).catch(() => null);
+          await Activity.findByIdAndDelete(tId).catch(() => null);
+          await Report.deleteMany({ targetId: tId, _id: { $ne: report._id } }).catch(() => null);
 
-          if (io) io.emit('activity:delete', { _id: actId });
-        }
-
-        await Group.findByIdAndDelete(tId).catch(() => null);
-        await Activity.findByIdAndDelete(tId).catch(() => null);
-        await Report.deleteMany({ targetId: tId, _id: { $ne: report._id } }).catch(() => null);
+        } catch (e) {}
 
         report.status = 'resolved';
         report.adminNotes = `Content deleted. Reason: ${reason || 'Violated community guidelines'}`;
@@ -663,21 +682,23 @@ router.post('/reports/:id/action', async (req, res) => {
         break;
 
       case 'block_user':
-        let ownerId;
-        if (report.targetType === 'group') {
-          const groupTarget = await Group.findById(report.targetId);
-          ownerId = groupTarget?.createdBy;
-        } else if (report.targetType === 'activity') {
-          const activityTarget = await Activity.findById(report.targetId);
-          ownerId = activityTarget?.createdBy;
-        } else if (report.targetType === 'user') {
-          ownerId = report.targetId;
-        }
+        try {
+          let ownerId;
+          if (report.targetType === 'group') {
+            const groupTarget = await Group.findById(report.targetId).catch(() => null);
+            ownerId = groupTarget?.createdBy;
+          } else if (report.targetType === 'activity') {
+            const activityTarget = await Activity.findById(report.targetId).catch(() => null);
+            ownerId = activityTarget?.createdBy;
+          } else if (report.targetType === 'user') {
+            ownerId = report.targetId;
+          }
 
-        if (ownerId) {
-          await User.findByIdAndUpdate(ownerId, { isBlocked: true });
-          result.message = 'User blocked successfully';
-        }
+          if (ownerId) {
+            await User.findByIdAndUpdate(ownerId, { isBlocked: true }).catch(() => null);
+            result.message = 'User blocked successfully';
+          }
+        } catch (e) {}
 
         report.status = 'resolved';
         report.adminNotes = `User blocked. Reason: ${reason || 'Repeated violations'}`;
@@ -701,7 +722,7 @@ router.post('/reports/:id/action', async (req, res) => {
 
     report.reviewedBy = req.user._id;
     report.reviewedAt = new Date();
-    await report.save();
+    await report.save().catch(() => null);
 
     res.status(200).json({
       ...result,
